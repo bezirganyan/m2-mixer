@@ -1,4 +1,9 @@
+from torch.nn import BCEWithLogitsLoss
+from torchmetrics.classification import MulticlassF1Score
+
+from datasets.multimodal import MMIMDBDataModule
 from datasets.pnlp import PnlpMixerDataModule
+from models.mmixer import MultimodalMixer
 from models.pnlp import PnlpMixerSeqCls, PnlpMixerTokenCls
 from omegaconf import OmegaConf
 from omegaconf.dictconfig import DictConfig
@@ -8,29 +13,38 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import pytorch_lightning as pl
+from sklearn.metrics import f1_score
 
 
-class PnlpMixerSeqClsTrainModule(pl.LightningModule):
+class MMIDB_Mixer(pl.LightningModule):
     def __init__(self, optimizer_cfg: DictConfig, model_cfg: DictConfig, **kwargs):
-        super(PnlpMixerSeqClsTrainModule, self).__init__(**kwargs)
+        super(MMIDB_Mixer, self).__init__(**kwargs)
         self.optimizer_cfg = optimizer_cfg
-        self.model = PnlpMixerSeqCls(
+        self.model = MultimodalMixer(
+            model_cfg.image,
+            model_cfg.text,
+            model_cfg.multimodal,
             model_cfg.bottleneck,
-            model_cfg.mixer,
-            model_cfg.sequence_cls,
+            model_cfg.classification,
+            dropout=0.8
         )
+        self.criterion = BCEWithLogitsLoss()
+        self.train_score = MulticlassF1Score(model_cfg.classification.num_classes, average='weighted', task='multilabel')
+        self.val_score = MulticlassF1Score(model_cfg.classification.num_classes, average='weighted', task='multilabel')
+        self.test_score = MulticlassF1Score(model_cfg.classification.num_classes, average='weighted', task='multilabel')
 
     def shared_step(self, batch):
-        inputs = batch['inputs']
-        targets = batch['targets']
-        logits = self.model(inputs)
-        loss = F.cross_entropy(logits, targets.long())
-        corr = torch.sum(logits.argmax(dim=-1) == targets)
-        all = logits.size(0)
+        image = batch['image']
+        text = batch['text']
+        labels = batch['label']
+        logits = self.model(image, text)
+        loss = self.criterion(logits, labels.float())
+        preds = torch.sigmoid(logits) > 0.5
+
         return {
-            'loss': loss,
-            'corr': corr,
-            'all': all
+            'preds': preds,
+            'labels': labels,
+            'loss': loss
         }
 
     def compute_accuracy(self, outputs: List[Dict[str, Any]]):
@@ -46,30 +60,39 @@ class PnlpMixerSeqClsTrainModule(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         results = self.shared_step(batch)
         self.log('train_loss', results['loss'], on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        # self.log('train_score', self.train_score(results['preds'], results['labels']), on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log('train_score_sk', f1_score(results['preds'].cpu().detach().numpy(), results['labels'].cpu().detach().numpy(), average='weighted', zero_division=1), on_step=True, on_epoch=True, prog_bar=True, logger=True)
         return results
 
     def training_epoch_end(self, outputs):
-        accuracy = self.compute_accuracy(outputs)
-        self.log('train_acc', accuracy['acc'], on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        # self.log('train_score', self.train_score.compute(), on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        preds = torch.cat([output['preds'] for output in outputs], dim=0)
+        labels = torch.cat([output['labels'] for output in outputs], dim=0)
+        self.log('train_score_sk', f1_score(preds.cpu().detach().numpy(), labels.cpu().detach().numpy(), average='weighted', zero_division=1), on_step=False, on_epoch=True, prog_bar=True, logger=True)
 
     def validation_step(self, batch, batch_idx):
         results = self.shared_step(batch)
         self.log('val_loss', results['loss'], on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        # self.log('val_score', self.val_score(results['preds'], results['labels']), on_step=False, on_epoch=True, prog_bar=True, logger=True)
         return results
 
     def validation_epoch_end(self, outputs):
-        accuracy = self.compute_accuracy(outputs)
-        self.log('val_acc', accuracy['acc'], on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        # self.log('val_score', self.val_score.compute(), on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        preds = torch.cat([output['preds'] for output in outputs], dim=0)
+        labels = torch.cat([output['labels'] for output in outputs], dim=0)
+        self.log('val_score_sk', f1_score(preds.cpu().detach().numpy(), labels.cpu().detach().numpy(), average='weighted', zero_division=1), on_step=False, on_epoch=True, prog_bar=True, logger=True)
 
     def test_step(self, batch, batch_idx):
         results = self.shared_step(batch)
         self.log('test_loss', results['loss'], on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        # self.log('test_score', self.test_score(results['preds'], results['labels']), on_step=False, on_epoch=True, prog_bar=True, logger=True)
         return results
 
     def test_epoch_end(self, outputs):
-        accuracy = self.compute_accuracy(outputs)
-        self.log('test_acc', accuracy['acc'], on_step=False, on_epoch=True, prog_bar=True, logger=True)
-
+        # self.log('test_score', self.test_score.compute(), on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        preds = torch.cat([output['preds'] for output in outputs], dim=0)
+        labels = torch.cat([output['labels'] for output in outputs], dim=0)
+        self.log('test_score_sk', f1_score(preds.cpu().detach().numpy(), labels.cpu().detach().numpy(), average='weighted', zero_division=1), on_step=False, on_epoch=True, prog_bar=True, logger=True)
     def configure_optimizers(self):
         optimizer_cfg = self.optimizer_cfg
         optimizer = torch.optim.Adam(self.parameters(), **optimizer_cfg)
@@ -87,7 +110,7 @@ def parse_args():
 
 def get_module_cls(type: str):
     if type == 'matis' or type == 'imdb':
-        return PnlpMixerSeqClsTrainModule
+        return MMIDB_Mixer
 
 
 if __name__ == '__main__':
@@ -102,14 +125,14 @@ if __name__ == '__main__':
                                                        model_cfg=model_cfg)
     else:
         train_module = module_cls(train_cfg.optimizer, model_cfg)
-    data_module = PnlpMixerDataModule(cfg.vocab, train_cfg, model_cfg.projection)
+    data_module = MMIMDBDataModule('../output', 32, 8, cfg.vocab, train_cfg, model_cfg.projection)
     trainer = pl.Trainer(
         # accelerator='ddp',
         # amp_backend='native',
         # amp_level='O2',
         callbacks=[
             pl.callbacks.ModelCheckpoint(
-                monitor='val_acc',
+                monitor='val_score_sk',
                 save_last=True,
                 save_top_k=5,
                 mode='max'
