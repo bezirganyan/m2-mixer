@@ -16,7 +16,7 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 from sklearn.metrics import f1_score
 
-from utils.utils import deep_update
+from utils.utils import deep_update, todict
 
 
 class MMIDB_Mixer(pl.LightningModule):
@@ -118,6 +118,7 @@ def parse_args():
     parser.add_argument('-n', '--name', type=str)
     parser.add_argument('-p', '--ckpt', type=str)
     parser.add_argument('-m', '--mode', type=str, default='train')
+    parser.add_argument('--disable-wandb', action='store_true', default=False)
     args, unknown = parser.parse_known_args()
     return args, unknown
 
@@ -133,7 +134,7 @@ if __name__ == '__main__':
     vocab_cfg = cfg.vocab
     train_cfg = cfg.train
     model_cfg = cfg.model
-
+    pl.seed_everything(train_cfg.seed)
     unknown = [u.replace('--', '') for u in unknown]
     ucfg = OmegaConf.from_cli(unknown)
     if 'model' in ucfg:
@@ -143,7 +144,11 @@ if __name__ == '__main__':
     if 'vocab' in ucfg:
         deep_update(vocab_cfg, ucfg.vocab)
 
-    wandb.init(project='MMixer', name=args.name, config=dict(cfg))
+    if args.disable_wandb:
+        wandb.init(project='MMixer', name=args.name, config=todict(cfg), mode='disabled')
+    else:
+        wandb.init(project='MMixer', name=args.name, config=todict(cfg))
+
 
     module_cls = get_module_cls(train_cfg.dataset_type)
     if args.ckpt:

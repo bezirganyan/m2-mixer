@@ -53,5 +53,5 @@ command:
   - "-c"
   - "cfg/imdb_base.yml"
   - "-n"
-  - HyperparameterSearch
+  - "HyperparameterSearch"
   - ${args}
