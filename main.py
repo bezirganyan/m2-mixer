@@ -1,3 +1,4 @@
+import wandb
 from torch.nn import BCEWithLogitsLoss
 from torchmetrics.classification import MulticlassF1Score
 
@@ -15,6 +16,8 @@ import torch.nn.functional as F
 import pytorch_lightning as pl
 from sklearn.metrics import f1_score
 
+from utils.utils import deep_update
+
 
 class MMIDB_Mixer(pl.LightningModule):
     def __init__(self, optimizer_cfg: DictConfig, model_cfg: DictConfig, **kwargs):
@@ -26,7 +29,7 @@ class MMIDB_Mixer(pl.LightningModule):
             model_cfg.multimodal,
             model_cfg.bottleneck,
             model_cfg.classification,
-            dropout=0.8
+            dropout=model_cfg.dropout
         )
         self.criterion = BCEWithLogitsLoss()
         self.train_score = MulticlassF1Score(model_cfg.classification.num_classes, average='weighted', task='multilabel')
@@ -61,14 +64,19 @@ class MMIDB_Mixer(pl.LightningModule):
         results = self.shared_step(batch)
         self.log('train_loss', results['loss'], on_step=True, on_epoch=True, prog_bar=True, logger=True)
         # self.log('train_score', self.train_score(results['preds'], results['labels']), on_step=True, on_epoch=True, prog_bar=True, logger=True)
-        self.log('train_score_sk', f1_score(results['preds'].cpu().detach().numpy(), results['labels'].cpu().detach().numpy(), average='weighted', zero_division=1), on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        score = f1_score(results['preds'].cpu().detach().numpy(), results['labels'].cpu().detach().numpy(), average='weighted', zero_division=1)
+        self.log('train_score_sk', score, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        wandb.log({'train_loss_step': results['loss'].cpu().item()})
         return results
 
     def training_epoch_end(self, outputs):
         # self.log('train_score', self.train_score.compute(), on_step=False, on_epoch=True, prog_bar=True, logger=True)
         preds = torch.cat([output['preds'] for output in outputs], dim=0)
         labels = torch.cat([output['labels'] for output in outputs], dim=0)
-        self.log('train_score_sk', f1_score(preds.cpu().detach().numpy(), labels.cpu().detach().numpy(), average='weighted', zero_division=1), on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        score = f1_score(preds.cpu().detach().numpy(), labels.cpu().detach().numpy(), average='weighted', zero_division=1)
+        self.log('train_score_sk', score, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        wandb.log({'train_score': score})
+        wandb.log({'train_loss': np.mean([output['loss'].cpu().item() for output in outputs])})
 
     def validation_step(self, batch, batch_idx):
         results = self.shared_step(batch)
@@ -80,7 +88,10 @@ class MMIDB_Mixer(pl.LightningModule):
         # self.log('val_score', self.val_score.compute(), on_step=False, on_epoch=True, prog_bar=True, logger=True)
         preds = torch.cat([output['preds'] for output in outputs], dim=0)
         labels = torch.cat([output['labels'] for output in outputs], dim=0)
-        self.log('val_score_sk', f1_score(preds.cpu().detach().numpy(), labels.cpu().detach().numpy(), average='weighted', zero_division=1), on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        score = f1_score(preds.cpu().detach().numpy(), labels.cpu().detach().numpy(), average='weighted', zero_division=1)
+        self.log('val_score_sk', score, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        wandb.log({'val_score': score})
+        wandb.log({'val_loss': np.mean([output['loss'].cpu().item() for output in outputs])})
 
     def test_step(self, batch, batch_idx):
         results = self.shared_step(batch)
@@ -92,7 +103,9 @@ class MMIDB_Mixer(pl.LightningModule):
         # self.log('test_score', self.test_score.compute(), on_step=False, on_epoch=True, prog_bar=True, logger=True)
         preds = torch.cat([output['preds'] for output in outputs], dim=0)
         labels = torch.cat([output['labels'] for output in outputs], dim=0)
-        self.log('test_score_sk', f1_score(preds.cpu().detach().numpy(), labels.cpu().detach().numpy(), average='weighted', zero_division=1), on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        score = f1_score(preds.cpu().detach().numpy(), labels.cpu().detach().numpy(), average='weighted', zero_division=1)
+        self.log('test_score_sk', score, on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        wandb.log({'test_score': score})
     def configure_optimizers(self):
         optimizer_cfg = self.optimizer_cfg
         optimizer = torch.optim.Adam(self.parameters(), **optimizer_cfg)
@@ -100,12 +113,13 @@ class MMIDB_Mixer(pl.LightningModule):
 
 
 def parse_args():
-    args = argparse.ArgumentParser()
-    args.add_argument('-c', '--cfg', type=str)
-    args.add_argument('-n', '--name', type=str)
-    args.add_argument('-p', '--ckpt', type=str)
-    args.add_argument('-m', '--mode', type=str, default='train')
-    return args.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-c', '--cfg', type=str)
+    parser.add_argument('-n', '--name', type=str)
+    parser.add_argument('-p', '--ckpt', type=str)
+    parser.add_argument('-m', '--mode', type=str, default='train')
+    args, unknown = parser.parse_known_args()
+    return args, unknown
 
 
 def get_module_cls(type: str):
@@ -114,23 +128,38 @@ def get_module_cls(type: str):
 
 
 if __name__ == '__main__':
-    args = parse_args()
+    args, unknown = parse_args()
     cfg = OmegaConf.load(args.cfg)
     vocab_cfg = cfg.vocab
     train_cfg = cfg.train
     model_cfg = cfg.model
+
+    unknown = [u.replace('--', '') for u in unknown]
+    ucfg = OmegaConf.from_cli(unknown)
+    if 'model' in ucfg:
+        deep_update(model_cfg, ucfg.model)
+    if 'train' in ucfg:
+        deep_update(train_cfg, ucfg.train)
+    if 'vocab' in ucfg:
+        deep_update(vocab_cfg, ucfg.vocab)
+
+    wandb.init(project='MMixer', name=args.name, config=dict(cfg))
+
     module_cls = get_module_cls(train_cfg.dataset_type)
     if args.ckpt:
         train_module = module_cls.load_from_checkpoint(args.ckpt, optimizer_cfg=train_cfg.optimizer,
                                                        model_cfg=model_cfg)
     else:
         train_module = module_cls(train_cfg.optimizer, model_cfg)
+    wandb.watch(train_module)
     data_module = MMIMDBDataModule('../output', 32, 8, cfg.vocab, train_cfg, model_cfg.projection)
+
     trainer = pl.Trainer(
         # accelerator='ddp',
         # amp_backend='native',
         # amp_level='O2',
         callbacks=[
+            pl.callbacks.EarlyStopping(monitor='val_score_sk', patience=5, mode='max'),
             pl.callbacks.ModelCheckpoint(
                 monitor='val_score_sk',
                 save_last=True,
@@ -142,7 +171,7 @@ if __name__ == '__main__':
         gpus=-1,
         log_every_n_steps=train_cfg.log_interval_steps,
         logger=pl.loggers.TensorBoardLogger(train_cfg.tensorboard_path, args.name),
-        max_epochs=train_cfg.epochs,
+        max_epochs=train_cfg.epochs
     )
     if args.mode == 'train':
         trainer.fit(train_module, data_module)

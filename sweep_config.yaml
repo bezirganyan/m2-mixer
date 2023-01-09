@@ -1,0 +1,57 @@
+program: main.py
+method: random
+name: sweep
+metric:
+  goal: minimize
+  name: val_loss
+parameters:
+  model:
+    parameters:
+      bottleneck:
+        parameters:
+          hidden_dim:
+            values: [64, 128, 256]
+      image:
+        parameters:
+          token_dim:
+            values: [64, 128, 256]
+          channel_dim:
+            values: [64, 128, 256]
+          num_mixers:
+            values: [2, 4, 8]
+      text:
+        parameters:
+          mlp_hidden_dim:
+            values: [64, 128, 256]
+          num_mixers:
+            values: [2, 4, 8]
+      multimodal:
+        parameters:
+          hidden_dim:
+            values: [64, 128, 256]
+          num_mixers:
+            values: [2, 4, 8]
+          token_dim:
+            values: [64, 128, 256]
+          channel_dim:
+            values: [64, 128, 256]
+  train:
+    parameters:
+      train_batch_size:
+        values: [16, 32, 64, 128]
+      epochs:
+        values: [5, 10, 15]
+      optimizer:
+        parameters:
+          lr:
+            max: 0.1
+            min: 0.0001
+command:
+  - ${env}
+  - ${interpreter}
+  - ${program}
+  - "-c"
+  - "cfg/imdb_base.yml"
+  - "-n"
+  - HyperparameterSearch
+  - ${args}
