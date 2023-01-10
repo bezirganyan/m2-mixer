@@ -1,0 +1,6 @@
+vocab.npy
+__pycache__/
+logs/
+wandb/
+.idea/
+GoogleNews-vectors-negative300.bin
