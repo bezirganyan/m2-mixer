@@ -1,61 +1,64 @@
-
-vocab: 
-  tokenizer_type: wordpiece
-  tokenizer: 
-    vocab: ./wordpiece/mbert_vocab.txt
-    lowercase: false
-    strip_accents: false
-    clean_text: false
-  vocab_path: vocab.npy
-
 train:
-  dataset_type: imdb
-  dataset_path: ../data/aclImdb
-  labels: [neg, pos] 
   tensorboard_path: ./logs/
   log_interval_steps: 10
-  epochs: 17
-  train_batch_size: 32 # 256
-  test_batch_size: 32 # 256
-  num_workers: 8 # 16
-  max_seq_len: &max_seq_len 160 # 1024
-  optimizer: 
+  epochs: 100
+  optimizer:
     lr: 5e-4
     betas: [0.9, 0.999]
     eps: 1e-8
   seed: 42
 
+dataset:
+  type: mmimdb
+  params:
+    data_dir: ../output/
+    batch_size: 128
+    num_workers: 8
+    max_seq_len: &max_seq_len 160
+
+    projection:
+      num_hashes: 64
+      feature_size: &feature_size 1024
+      window_size: &window_size 1
+
+    vocab:
+      tokenizer_type: wordpiece
+      tokenizer:
+        vocab: ./wordpiece/mbert_vocab.txt
+        lowercase: false
+        strip_accents: false
+        clean_text: false
+      vocab_path: vocab.npy
+
 model:
-  dropout: 0.8
-  projection:
-    num_hashes: 64
-    feature_size: &feature_size 1024
-    window_size: &window_size 1
-  bottleneck: 
-    window_size: *window_size
-    feature_size: *feature_size
-    hidden_dim: &hidden_dim 256
-  text:
-    num_mixers: 2
-    max_seq_len: *max_seq_len
-    hidden_dim: *hidden_dim
-    mlp_hidden_dim: 256
-  classification:
-    hidden_dim: *hidden_dim
-    proj_dim: *hidden_dim
-    num_classes: 23
-  image:
-    in_channels: 3
-    hidden_dim: *hidden_dim
-    patch_size: 16
-    image_size: [160, 256]
-    num_mixers: 1
-    token_dim: 256
-    channel_dim: 256
-  multimodal:
-    hidden_dim: 256
-    num_mixers: 2
-    token_dim: 256
-    channel_dim: 256
-    patch_size: 16
-    image_size: [320, 256]
+  type: mmimdb_mixer
+  dropout: 0.6
+  modalities:
+    bottleneck:
+      window_size: *window_size
+      feature_size: *feature_size
+      hidden_dim: &hidden_dim 256
+    text:
+      num_mixers: 10
+      max_seq_len: *max_seq_len
+      hidden_dim: *hidden_dim
+      mlp_hidden_dim: 512
+    classification:
+      hidden_dim: *hidden_dim
+      proj_dim: *hidden_dim
+      num_classes: 23
+    image:
+      in_channels: 3
+      hidden_dim: 768
+      patch_size: 16
+      image_size: [160, 256]
+      num_mixers: 10
+      token_dim: 384
+      channel_dim: 3072
+    multimodal:
+      hidden_dim: 768
+      num_mixers: 10
+      token_dim: 512
+      channel_dim: 512
+      patch_size: 16
+      image_size: [160, 256]

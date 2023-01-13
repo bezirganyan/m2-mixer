@@ -13,19 +13,20 @@ from utils.projection import Projection
 
 class MMIMDBDataModule(pl.LightningDataModule):
 
-    def __init__(self, data_dir: str, batch_size: int, num_workers: int, vocab_cfg: DictConfig, train_cfg: DictConfig, proj_cfg: DictConfig, **kwargs):
+    def __init__(self, data_dir: str, batch_size: int, num_workers: int, vocab: DictConfig, projection: DictConfig,
+                 max_seq_len: int, **kwargs):
         super().__init__(**kwargs)
+        self.max_seq_len = max_seq_len
         self.data_dir = data_dir
         self.batch_size = batch_size
         self.num_workers = num_workers
-        self.vocab_cfg = vocab_cfg
-        self.train_cfg = train_cfg
-        self.projecion = Projection(vocab_cfg.vocab_path, proj_cfg.feature_size, proj_cfg.window_size)
-        self.tokenizer = BertWordPieceTokenizer(**vocab_cfg.tokenizer)
+        self.vocab_cfg = vocab
+        self.projecion = Projection(vocab.vocab_path, projection.feature_size, projection.window_size)
+        self.tokenizer = BertWordPieceTokenizer(**vocab.tokenizer)
     def setup(self, stage: str = None):
-        self.train_set = MMIMDBDataset(os.path.join(self.data_dir), stage='train', tokenizer=self.tokenizer, projection=self.projecion, max_seq_len=self.train_cfg.max_seq_len)
-        self.eval_set = MMIMDBDataset(os.path.join(self.data_dir), stage='dev', tokenizer=self.tokenizer, projection=self.projecion, max_seq_len=self.train_cfg.max_seq_len)
-        self.test_set = MMIMDBDataset(os.path.join(self.data_dir), stage='test', tokenizer=self.tokenizer, projection=self.projecion, max_seq_len=self.train_cfg.max_seq_len)
+        self.train_set = MMIMDBDataset(os.path.join(self.data_dir), stage='train', tokenizer=self.tokenizer, projection=self.projecion, max_seq_len=self.max_seq_len)
+        self.eval_set = MMIMDBDataset(os.path.join(self.data_dir), stage='dev', tokenizer=self.tokenizer, projection=self.projecion, max_seq_len=self.max_seq_len)
+        self.test_set = MMIMDBDataset(os.path.join(self.data_dir), stage='test', tokenizer=self.tokenizer, projection=self.projecion, max_seq_len=self.max_seq_len)
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(self.train_set, self.batch_size, shuffle=True,
@@ -70,7 +71,7 @@ class MMIMDBDataset(Dataset):
     def __len__(self):
         return self.len_data
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> dict:
 
         imagepath = os.path.join(self.root_dir, self.stage, 'images', f'image_{idx}.jpeg')
         labelpath = os.path.join(self.root_dir, self.stage, 'labels', f'label_{idx}.npy')

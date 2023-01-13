@@ -10,20 +10,14 @@ import pytorch_lightning as pl
 from torchmetrics import F1Score
 
 from models.mmixer import MultimodalMixer
+from modules.gmpl import VisiongMLP
 
 
-class MMIDB_Mixer(pl.LightningModule):
+class MMIDB_GMLP(pl.LightningModule):
     def __init__(self, optimizer_cfg: DictConfig, model_cfg: DictConfig, **kwargs):
-        super(MMIDB_Mixer, self).__init__(**kwargs)
+        super(MMIDB_GMLP, self).__init__(**kwargs)
         self.optimizer_cfg = optimizer_cfg
-        self.model = MultimodalMixer(
-            model_cfg.modalities.image,
-            model_cfg.modalities.text,
-            model_cfg.modalities.multimodal,
-            model_cfg.modalities.bottleneck,
-            model_cfg.modalities.classification,
-            dropout=model_cfg.dropout
-        )
+        self.model = VisiongMLP(dropout=model_cfg.dropout, **model_cfg.modalities.image)
         self.criterion = BCEWithLogitsLoss()
         self.train_score = F1Score(task="multilabel", num_labels=23, average='weighted')
         self.val_score = F1Score(task="multilabel", num_labels=23, average='weighted')
@@ -33,7 +27,7 @@ class MMIDB_Mixer(pl.LightningModule):
         image = batch['image']
         text = batch['text']
         labels = batch['label']
-        logits = self.model(image, text)
+        logits = self.model(image.float())
         loss = self.criterion(logits, labels.float())
         preds = torch.sigmoid(logits) > 0.5
 
@@ -52,14 +46,14 @@ class MMIDB_Mixer(pl.LightningModule):
         return results
 
     def training_epoch_end(self, outputs):
-        wandb.log({'train_score': self})
+        wandb.log({'train_score': self.train_score.compute()})
         wandb.log({'train_loss': np.mean([output['loss'].cpu().item() for output in outputs])})
 
     def validation_step(self, batch, batch_idx):
         results = self.shared_step(batch)
-        self.log('val_loss', results['loss'], on_step=False, on_epoch=True, prog_bar=False, logger=True)
+        self.log('val_loss', results['loss'], on_step=False, on_epoch=True, prog_bar=True, logger=True)
         self.log('val_score', self.val_score(results['preds'], results['labels']), on_step=False, on_epoch=True,
-                 prog_bar=False, logger=True)
+                 prog_bar=True, logger=True)
         return results
 
     def validation_epoch_end(self, outputs):
