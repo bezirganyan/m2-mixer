@@ -65,7 +65,7 @@ if __name__ == '__main__':
         train_module = model.load_from_checkpoint(args.ckpt, optimizer_cfg=train_cfg.optimizer,
                                                   model_cfg=model_cfg)
     else:
-        train_module = model(train_cfg.optimizer, model_cfg)
+        train_module = model(model_cfg, train_cfg.optimizer)
     wandb.watch(train_module)
     data_module = get_data_module(dataset_cfg.type)
     data_module = data_module(**dataset_cfg.params)

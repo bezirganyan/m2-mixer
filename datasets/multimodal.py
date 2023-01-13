@@ -7,6 +7,7 @@ from omegaconf import DictConfig
 from tokenizers.implementations import BertWordPieceTokenizer
 from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
+import torchvision.transforms as T
 
 from utils.projection import Projection
 
@@ -23,10 +24,23 @@ class MMIMDBDataModule(pl.LightningDataModule):
         self.vocab_cfg = vocab
         self.projecion = Projection(vocab.vocab_path, projection.feature_size, projection.window_size)
         self.tokenizer = BertWordPieceTokenizer(**vocab.tokenizer)
+
     def setup(self, stage: str = None):
-        self.train_set = MMIMDBDataset(os.path.join(self.data_dir), stage='train', tokenizer=self.tokenizer, projection=self.projecion, max_seq_len=self.max_seq_len)
-        self.eval_set = MMIMDBDataset(os.path.join(self.data_dir), stage='dev', tokenizer=self.tokenizer, projection=self.projecion, max_seq_len=self.max_seq_len)
-        self.test_set = MMIMDBDataset(os.path.join(self.data_dir), stage='test', tokenizer=self.tokenizer, projection=self.projecion, max_seq_len=self.max_seq_len)
+        transforms = T.Compose([
+            T.ToTensor(),
+            T.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225]
+            ),
+            T.RandomApply([T.RandomRotation(10)], p=0.2),
+            T.RandomApply([T.RandomResizedCrop([256, 160], scale=(0.8, 1.0), ratio=(0.9, 1.1))], p=0.2),
+            T.RandomApply([T.RandomHorizontalFlip()], p=0.05)])
+        self.train_set = MMIMDBDataset(os.path.join(self.data_dir), stage='train', tokenizer=self.tokenizer,
+                                       projection=self.projecion, max_seq_len=self.max_seq_len, transform=transforms)
+        self.eval_set = MMIMDBDataset(os.path.join(self.data_dir), stage='dev', tokenizer=self.tokenizer,
+                                      projection=self.projecion, max_seq_len=self.max_seq_len, transform=transforms)
+        self.test_set = MMIMDBDataset(os.path.join(self.data_dir), stage='test', tokenizer=self.tokenizer,
+                                      projection=self.projecion, max_seq_len=self.max_seq_len, transform=transforms)
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(self.train_set, self.batch_size, shuffle=True,
@@ -40,9 +54,10 @@ class MMIMDBDataModule(pl.LightningDataModule):
         return DataLoader(self.test_set, self.batch_size, shuffle=False,
                           num_workers=self.num_workers, persistent_workers=True)
 
+
 class MMIMDBDataset(Dataset):
 
-    def __init__(self, root_dir, tokenizer, projection, max_seq_len, feat_dim=100, stage='train',transform=None):
+    def __init__(self, root_dir, tokenizer, projection, max_seq_len, feat_dim=100, stage='train', transform=None):
         """
         Args:
             root_dir (string): Directory where data is.
@@ -56,7 +71,6 @@ class MMIMDBDataset(Dataset):
             self.len_data = 7799
         elif stage == 'dev':
             self.len_data = 2608
-
 
         self.transform = transform
         self.root_dir = root_dir
@@ -90,7 +104,7 @@ class MMIMDBDataset(Dataset):
         sample = {'image': image, 'text': features, 'label': label, 'textlen': textlen}
 
         if self.transform:
-            sample = self.transform(sample)
+            sample['image'] = self.transform(sample['image'].T).mT
 
         return sample
 
@@ -107,5 +121,5 @@ class MMIMDBDataset(Dataset):
         return text.replace('<br />', ' ')
 
     def get_words(self, fields: List[str]) -> List[str]:
-        return [w[0] for w in self.tokenizer.pre_tokenizer.pre_tokenize_str(self.normalize(fields[0]))][:self.max_seq_len]
-
+        return [w[0] for w in self.tokenizer.pre_tokenizer.pre_tokenize_str(self.normalize(fields[0]))][
+               :self.max_seq_len]
