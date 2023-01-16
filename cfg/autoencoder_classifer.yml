@@ -1,0 +1,49 @@
+train:
+  tensorboard_path: ./logs/
+  log_interval_steps: 10
+  epochs: 100
+  optimizer:
+    lr: 5e-4
+    betas: [0.9, 0.999]
+    eps: 1e-8
+  seed: 42
+  monitor: val_loss
+  monitor_mode: min
+
+dataset:
+  type: mmimdb
+  params:
+    data_dir: ../output/
+    batch_size: 64
+    num_workers: 8
+    max_seq_len: 160
+
+    projection:
+      num_hashes: 64
+      feature_size: &feature_size 1024
+      window_size: &window_size 1
+
+    vocab:
+      tokenizer_type: wordpiece
+      tokenizer:
+        vocab: ./wordpiece/mbert_vocab.txt
+        lowercase: false
+        strip_accents: false
+        clean_text: false
+      vocab_path: vocab.npy
+
+model:
+  pretrained_autoencoder_path: logs/Autoencoder/version_8/checkpoints/epoch=99-step=24300.ckpt
+  type: mmimdb_autoencoder_classifier
+  dropout: 0.5
+  modalities:
+    image:
+      in_channels: 3
+      hidden_dims: [768, 512, 256, 128]
+      patch_size: 16
+      image_size: [160, 256]
+      num_mixers: 2
+      token_dim: 512
+      channel_dim: 512
+    classification:
+      num_classes: 23

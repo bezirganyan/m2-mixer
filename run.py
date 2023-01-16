@@ -7,6 +7,8 @@ from datasets.multimodal import MMIMDBDataModule
 from omegaconf import OmegaConf
 import pytorch_lightning as pl
 
+from models.gmlp_autoencoder import GMLPAutoencoder
+from models.mixer_autoencoder import MixerAutoencoder, MMIMDBEncoderClassifier
 from models.mmimdb_gmlp import MMIDB_GMLP
 from models.mmimdb_mixer import MMIDB_Mixer
 from utils.utils import deep_update, todict
@@ -17,6 +19,12 @@ def get_model(model_type: str) -> type[pl.LightningModule]:
         return MMIDB_Mixer
     elif model_type == 'mmimdb_gmlp':
         return MMIDB_GMLP
+    elif model_type == 'mmimdb_autoencoder':
+        return MixerAutoencoder
+    elif model_type == 'mmimdb_autoencoder_classifier':
+        return MMIMDBEncoderClassifier
+    elif model_type == 'mmimdb_gmlp_autoencoder':
+        return GMLPAutoencoder
     else:
         raise NotImplementedError
 
@@ -74,10 +82,10 @@ if __name__ == '__main__':
         callbacks=[
             # pl.callbacks.EarlyStopping(monitor='val_score_sk', patience=5, mode='max'),
             pl.callbacks.ModelCheckpoint(
-                monitor='val_score',
+                monitor=train_cfg.monitor,
                 save_last=True,
                 save_top_k=5,
-                mode='max'
+                mode=train_cfg.monitor_mode
             )
         ],
         gpus=-1,

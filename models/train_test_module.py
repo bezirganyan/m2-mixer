@@ -31,35 +31,41 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
     def training_step(self, batch, batch_idx):
         results = self.shared_step(batch)
         self.log('train_loss', results['loss'], on_step=True, on_epoch=True, prog_bar=True, logger=True)
-        score = self.train_score(results['preds'], results['labels'])
-        self.log('train_score', score, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        if self.train_score is not None:
+            score = self.train_score(results['preds'].to(self.device), results['labels'].to(self.device))
+            self.log('train_score', score, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         wandb.log({'train_loss_step': results['loss'].cpu().item()})
         return results
 
     def training_epoch_end(self, outputs):
-        wandb.log({'train_score': self.train_score.compute()})
+        if self.train_score is not None:
+            wandb.log({'train_score': self.train_score.compute()})
         wandb.log({'train_loss': np.mean([output['loss'].cpu().item() for output in outputs])})
 
     def validation_step(self, batch, batch_idx):
         results = self.shared_step(batch)
         self.log('val_loss', results['loss'], on_step=False, on_epoch=True, prog_bar=True, logger=True)
-        self.log('val_score', self.val_score(results['preds'], results['labels']), on_step=False, on_epoch=True,
-                 prog_bar=True, logger=True)
+        if self.val_score is not None:
+            self.log('val_score', self.val_score(results['preds'].to(self.device), results['labels'].to(self.device)), on_step=False, on_epoch=True,
+                     prog_bar=True, logger=True)
         return results
 
     def validation_epoch_end(self, outputs):
-        wandb.log({'val_score': self.val_score.compute()})
+        if self.val_score is not None:
+            wandb.log({'val_score': self.val_score.compute()})
         wandb.log({'val_loss': np.mean([output['loss'].cpu().item() for output in outputs])})
 
     def test_step(self, batch, batch_idx):
         results = self.shared_step(batch)
         self.log('test_loss', results['loss'], on_step=False, on_epoch=True, prog_bar=True, logger=True)
-        self.log('test_score', self.test_score(results['preds'], results['labels']), on_step=False, on_epoch=True,
-                 prog_bar=True, logger=True)
+        if self.test_score is not None:
+            self.log('test_score', self.test_score(results['preds'].to(self.device), results['labels'].to(self.device)), on_step=False, on_epoch=True,
+                     prog_bar=True, logger=True)
         return results
 
     def test_epoch_end(self, outputs):
-        wandb.log({'test_score': self.test_score.compute()})
+        if self.test_score is not None:
+            wandb.log({'test_score': self.test_score.compute()})
 
     def configure_optimizers(self):
         optimizer_cfg = self.optimizer_cfg
