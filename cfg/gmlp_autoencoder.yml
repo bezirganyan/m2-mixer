@@ -7,12 +7,13 @@ train:
     betas: [0.9, 0.999]
     eps: 1e-8
   seed: 42
-
+  monitor: val_loss
+  monitor_mode: min
 dataset:
   type: mmimdb
   params:
     data_dir: ../output/
-    batch_size: 128
+    batch_size: 32
     num_workers: 8
     max_seq_len: 160
 
@@ -31,14 +32,15 @@ dataset:
       vocab_path: vocab.npy
 
 model:
-  type: mmimdb_gmlp
-  dropout: 0.6
+  type: mmimdb_gmlp_autoencoder
+  dropout: 0.
   modalities:
     image:
       image_size: &image_size [160, 256]
       n_channels: &n_channels 3
       patch_size: &patch_size 16
-      d_model: &d_model 128
+      hidden_dims: &hidden_dims [768, 768, 768, 512, 512, 512, 256, 256, 256, 128, 128, 128, 64, 64, 64]
       d_ffn: &d_ffn 768
-      n_blocks: &n_blocks 30
+      n_blocks: &n_blocks 15
       n_classes: &n_classes 23
+      prob_0_L: [1, 0.5]
