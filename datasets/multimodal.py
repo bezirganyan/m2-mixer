@@ -9,6 +9,7 @@ from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
 import torchvision.transforms as T
 
+from datasets.transforms import RuinModality
 from utils.projection import Projection
 
 
@@ -26,21 +27,29 @@ class MMIMDBDataModule(pl.LightningDataModule):
         self.tokenizer = BertWordPieceTokenizer(**vocab.tokenizer)
 
     def setup(self, stage: str = None):
-        transforms = T.Compose([
+        train_transforms = dict(image=T.Compose([
             T.ToTensor(),
             T.Normalize(
                 mean=[0.485, 0.456, 0.406],
                 std=[0.229, 0.224, 0.225]
-            ),
-            T.RandomApply([T.RandomRotation(10)], p=0.2),
-            T.RandomApply([T.RandomResizedCrop([256, 160], scale=(0.8, 1.0), ratio=(0.9, 1.1))], p=0.2),
-            T.RandomApply([T.RandomHorizontalFlip()], p=0.05)])
+            )]),
+            multimodal=T.RandomApply([RuinModality(p=0.3)], p=0.3))
+
+        val_test_transforms = dict(image=T.Compose([
+            T.ToTensor(),
+            T.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225]
+            )]))
         self.train_set = MMIMDBDataset(os.path.join(self.data_dir), stage='train', tokenizer=self.tokenizer,
-                                       projection=self.projecion, max_seq_len=self.max_seq_len, transform=transforms)
+                                       projection=self.projecion, max_seq_len=self.max_seq_len,
+                                       transform=train_transforms)
         self.eval_set = MMIMDBDataset(os.path.join(self.data_dir), stage='dev', tokenizer=self.tokenizer,
-                                      projection=self.projecion, max_seq_len=self.max_seq_len, transform=transforms)
+                                      projection=self.projecion, max_seq_len=self.max_seq_len,
+                                      transform=val_test_transforms)
         self.test_set = MMIMDBDataset(os.path.join(self.data_dir), stage='test', tokenizer=self.tokenizer,
-                                      projection=self.projecion, max_seq_len=self.max_seq_len, transform=transforms)
+                                      projection=self.projecion, max_seq_len=self.max_seq_len,
+                                      transform=val_test_transforms)
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(self.train_set, self.batch_size, shuffle=True,
@@ -98,13 +107,20 @@ class MMIMDBDataset(Dataset):
 
         textlen = text.count(' ') + 1
 
-        fields = text.split('\t')
+        sample = {'image': image, 'text': text, 'label': label, 'textlen': textlen}
+        if self.transform:
+            for m in self.transform:
+                if m == 'image':
+                    sample[m] = self.transform[m](sample[m].T).mT
+                elif m == 'multimodal':
+                    sample = self.transform[m](sample)
+                else:
+                    sample[m] = self.transform[m](sample[m])
+
+        fields = sample['text'].split('\t')
         words = self.get_words(fields)
         features = self.project_features(words)
-        sample = {'image': image, 'text': features, 'label': label, 'textlen': textlen}
-
-        if self.transform:
-            sample['image'] = self.transform(sample['image'].T).mT
+        sample['text'] = features
 
         return sample
 
