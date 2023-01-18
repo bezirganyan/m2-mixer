@@ -22,27 +22,20 @@ class SpatialGatingUnit(nn.Module):
 
 
 class GatingMlpBlock(nn.Module):
-    def __init__(self, d_model, d_ffn, seq_len, survival_prob, out_dim=None, dropout=0.):
+    def __init__(self, d_model, d_ffn, seq_len, survival_prob, dropout=0.):
         super().__init__()
 
-        self.proj = True
-        if out_dim is None:
-            out_dim = d_model
-            self.proj = False
         self.norm = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(dropout)
         self.proj_1 = nn.Linear(d_model, d_ffn)
         self.activation = nn.GELU()
         self.spatial_gating_unit = SpatialGatingUnit(d_ffn, seq_len, dropout)
-        self.proj_2 = nn.Linear(d_ffn // 2, out_dim)
-        self.proj_3 = nn.Linear(d_model, out_dim)
+        self.proj_2 = nn.Linear(d_ffn // 2, d_model)
         self.prob = survival_prob
         self.m = torch.distributions.bernoulli.Bernoulli(torch.Tensor([self.prob]))
 
     def forward(self, x):
         if self.training and torch.equal(self.m.sample(), torch.zeros(1)):
-            if self.proj:
-                return self.proj_3(x)
             return x
         shorcut = x.clone()
         x = self.norm(x)
@@ -52,8 +45,7 @@ class GatingMlpBlock(nn.Module):
         x = self.spatial_gating_unit(x)
         x = self.proj_2(x)
         x = self.dropout(x)
-        if self.proj:
-            shorcut = self.proj_3(shorcut)
+
         return x + shorcut
 
 

@@ -7,8 +7,8 @@ from datasets.multimodal import MMIMDBDataModule
 from omegaconf import OmegaConf
 import pytorch_lightning as pl
 
-from models.gmlp_autoencoder import GMLPAutoencoder
-from models.mixer_autoencoder import MixerAutoencoder, MMIMDBEncoderClassifier
+from models.gmlp_autoencoder import GMLPAutoencoder, MMIMDGMLPClassifier
+from models.mixer_autoencoder import MixerAutoencoder, MMIMDBMixerGMLPClassifier, MMIMDBEncoderClassifier
 from models.mmimdb_gmlp import MMIDB_GMLP
 from models.mmimdb_mixer import MMIDB_Mixer
 from utils.utils import deep_update, todict
@@ -25,6 +25,10 @@ def get_model(model_type: str) -> type[pl.LightningModule]:
         return MMIMDBEncoderClassifier
     elif model_type == 'mmimdb_gmlp_autoencoder':
         return GMLPAutoencoder
+    elif model_type == 'mmimdb_autoencoder_classifier':
+        return MMIMDBMixerGMLPClassifier
+    elif model_type == 'mmimdb_autoencoder_gmlp_classifier':
+        return MMIMDGMLPClassifier
     else:
         raise NotImplementedError
 
@@ -76,11 +80,13 @@ if __name__ == '__main__':
         train_module = model(model_cfg, train_cfg.optimizer)
     wandb.watch(train_module)
     data_module = get_data_module(dataset_cfg.type)
+    if dataset_cfg.params.num_workers == -1:
+        dataset_cfg.params.num_workers = os.cpu_count()
     data_module = data_module(**dataset_cfg.params)
 
     trainer = pl.Trainer(
         callbacks=[
-            # pl.callbacks.EarlyStopping(monitor='val_score_sk', patience=5, mode='max'),
+            pl.callbacks.EarlyStopping(monitor='val_score_sk', patience=20, mode='max'),
             pl.callbacks.ModelCheckpoint(
                 monitor=train_cfg.monitor,
                 save_last=True,

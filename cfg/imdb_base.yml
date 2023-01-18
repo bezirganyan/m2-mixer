@@ -14,8 +14,8 @@ dataset:
   type: mmimdb
   params:
     data_dir: ../output/
-    batch_size: 128
-    num_workers: 8
+    batch_size: 32
+    num_workers: -1
     max_seq_len: &max_seq_len 160
 
     projection:
@@ -34,14 +34,14 @@ dataset:
 
 model:
   type: mmimdb_mixer
-  dropout: 0.5
+  dropout: 0.
   modalities:
     bottleneck:
       window_size: *window_size
       feature_size: *feature_size
-      hidden_dim: &hidden_dim 256
+      hidden_dim: &hidden_dim 768
     text:
-      num_mixers: 10
+      num_mixers: 2
       max_seq_len: *max_seq_len
       hidden_dim: *hidden_dim
       mlp_hidden_dim: 512
@@ -54,13 +54,13 @@ model:
       hidden_dim: 768
       patch_size: 16
       image_size: [160, 256]
-      num_mixers: 10
+      num_mixers: 2
       token_dim: 384
       channel_dim: 3072
     multimodal:
       hidden_dim: 768
-      num_mixers: 10
+      num_mixers: 2
       token_dim: 512
       channel_dim: 512
       patch_size: 16
-      image_size: [160, 256]
+      image_size: [320, 768]

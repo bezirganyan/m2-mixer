@@ -69,5 +69,5 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
 
     def configure_optimizers(self):
         optimizer_cfg = self.optimizer_cfg
-        optimizer = torch.optim.Adam(self.parameters(), **optimizer_cfg)
+        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
         return optimizer
