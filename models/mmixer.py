@@ -11,7 +11,8 @@ class MultimodalMixer(nn.Module):
                                     bottleneck_config.hidden_dim)
         self.text_mixer = PNLPMixer(**text_config, dropout=dropout)
         self.image_mixer = MLPMixer(**image_config, dropout=dropout)
-        self.fusion_mixer = FusionMixer(**multimodal_config, dropout=dropout)
+        num_patches = self.image_mixer.num_patch + text_config.max_seq_len
+        self.fusion_mixer = FusionMixer(**multimodal_config, num_patches=num_patches, dropout=dropout)
         self.head = nn.Linear(multimodal_config.hidden_dim, clasification_config.num_classes)
 
     def forward(self, image, text):
@@ -20,7 +21,7 @@ class MultimodalMixer(nn.Module):
 
         image_reprs = self.image_mixer(image.float())
 
-        multimodal_reprs = torch.cat((text_reprs, image_reprs), dim=1).unsqueeze(1)
+        multimodal_reprs = torch.cat((text_reprs, image_reprs), dim=1)
         # multimodal_reprs = (text_reprs + image_reprs).unsqueeze(1)
         multimodal_reprs = self.fusion_mixer(multimodal_reprs)
 

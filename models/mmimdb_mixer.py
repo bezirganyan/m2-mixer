@@ -25,10 +25,6 @@ class MMIDB_Mixer(AbstractTrainTestModule):
             model_cfg.modalities.classification,
             dropout=model_cfg.dropout
         )
-        self.criterion = BCEWithLogitsLoss()
-        self.train_score = F1Score(task="multilabel", num_labels=23, average='weighted')
-        self.val_score = F1Score(task="multilabel", num_labels=23, average='weighted')
-        self.test_score = F1Score(task="multilabel", num_labels=23, average='weighted')
 
     def shared_step(self, batch):
         image = batch['image']
@@ -45,7 +41,13 @@ class MMIDB_Mixer(AbstractTrainTestModule):
         }
 
     def setup_criterion(self) -> torch.nn.Module:
-        return BCEWithLogitsLoss()
+        pw = torch.tensor([4.57642832, 7.38544978, 10.79846869, 13.23391421,
+                           15.59020924, 18.62735849, 22.48861048, 25.21711367,
+                           74.50943396, 31.31641554, 31.79549114, 32.90833333,
+                           39.64859438, 56.90201729, 40.46106557, 58.24483776,
+                           67.3890785, 84.92473118, 58.33087149, 62.68253968,
+                           114.13294798, 141.54121864, 116.83431953])
+        return BCEWithLogitsLoss(pos_weight=pw)
 
     def setup_scores(self) -> List[torch.nn.Module]:
         train_score = F1Score(task="multilabel", num_labels=23, average='weighted')
