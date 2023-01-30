@@ -3,14 +3,17 @@ import os
 from typing import Type
 
 import wandb
+
+from datasets.get_processed_mmimdb import MMIMDBExtDataModule
 from datasets.multimodal import MMIMDBDataModule
 from omegaconf import OmegaConf
 import pytorch_lightning as pl
 
+from models.convnet import ConvNet
 from models.gmlp_autoencoder import GMLPAutoencoder, MMIMDGMLPClassifier
 from models.mixer_autoencoder import MixerAutoencoder, MMIMDBMixerGMLPClassifier, MMIMDBEncoderClassifier
 from models.mmimdb_gmlp import MMIDB_GMLP
-from models.mmimdb_mixer import MMIDB_Mixer
+from models.mmimdb_mixer import MMIDB_Mixer, MMIDBPooler
 from utils.utils import deep_update, todict
 
 
@@ -29,6 +32,10 @@ def get_model(model_type: str) -> type[pl.LightningModule]:
         return MMIMDBMixerGMLPClassifier
     elif model_type == 'mmimdb_autoencoder_gmlp_classifier':
         return MMIMDGMLPClassifier
+    elif model_type == 'mmimdb_convnet':
+        return ConvNet
+    elif model_type == 'mmimdb_pooler':
+        return MMIDBPooler
     else:
         raise NotImplementedError
 
@@ -36,6 +43,8 @@ def get_model(model_type: str) -> type[pl.LightningModule]:
 def get_data_module(data_type: str) -> type[pl.LightningDataModule]:
     if data_type == 'mmimdb':
         return MMIMDBDataModule
+    elif data_type == 'mmimdb_ext':
+        return MMIMDBExtDataModule
     else:
         raise NotImplementedError
 
@@ -86,7 +95,7 @@ if __name__ == '__main__':
 
     trainer = pl.Trainer(
         callbacks=[
-            pl.callbacks.EarlyStopping(monitor='val_score_sk', patience=20, mode='max'),
+            # pl.callbacks.EarlyStopping(monitor='val_loss', patience=20, mode='max'),
             pl.callbacks.ModelCheckpoint(
                 monitor=train_cfg.monitor,
                 save_last=True,
