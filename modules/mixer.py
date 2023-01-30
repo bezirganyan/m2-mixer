@@ -1,3 +1,5 @@
+from math import ceil
+
 import torch
 import numpy as np
 from torch import nn
@@ -45,18 +47,11 @@ class MixerBlock(nn.Module):
 
 
 class FusionMixer(nn.Module):
-    def __init__(self, hidden_dim, patch_size, image_size, num_mixers, token_dim, channel_dim,
+    def __init__(self, hidden_dim, num_patches, num_mixers, token_dim, channel_dim,
                  dropout=0.):
         super().__init__()
 
-        assert (image_size[0] % patch_size == 0) and (
-                    image_size[1] % patch_size == 0), 'Image dimensions must be divisible by the patch size.'
-        self.num_patch = (image_size[0] // patch_size) * (image_size[1] // patch_size)
-        self.to_patch_embedding = nn.Sequential(
-            nn.Conv2d(1, hidden_dim, patch_size, patch_size),
-            Rearrange('b c h w -> b (h w) c'),
-        )
-
+        self.num_patch = num_patches
         self.mixer_blocks = nn.ModuleList([])
 
         for _ in range(num_mixers):
@@ -65,7 +60,7 @@ class FusionMixer(nn.Module):
         self.layer_norm = nn.LayerNorm(hidden_dim)
 
     def forward(self, x):
-        x = self.to_patch_embedding(x)
+        # x = self.to_patch_embedding(x)
 
         for mixer_block in self.mixer_blocks:
             x = mixer_block(x)
@@ -91,6 +86,41 @@ class MLPMixer(nn.Module):
             self.mixer_blocks.append(MixerBlock(hidden_dim, self.num_patch, token_dim, channel_dim, dropout=dropout))
 
         self.layer_norm = nn.LayerNorm(hidden_dim)
+
+    def forward(self, x):
+        x = self.to_patch_embedding(x)
+
+        for mixer_block in self.mixer_blocks:
+            x = mixer_block(x)
+
+        x = self.layer_norm(x)
+        return x
+
+
+class MLPool(nn.Module):
+    def __init__(self, in_channels, hidden_dims, patch_size, image_size, num_mixers, token_dim, channel_dim,
+                 dropout=0.):
+        super().__init__()
+
+        assert (image_size[0] % patch_size == 0) and (image_size[1] % patch_size == 0), 'Image dimensions must be divisible by the patch size.'
+        self.num_patch = (image_size[0] // patch_size) * (image_size[1] // patch_size)
+        self.to_patch_embedding = nn.Sequential(
+            nn.Conv2d(in_channels, hidden_dims[0], patch_size, patch_size),
+            Rearrange('b c h w -> b (h w) c'),
+        )
+
+        self.mixer_blocks = nn.ModuleList([])
+
+        prev_dim = hidden_dims[0]
+        patch_dim = self.num_patch
+        for i in range(0, len(hidden_dims)):
+            if prev_dim != hidden_dims[i]:
+                self.mixer_blocks.append(nn.MaxPool2d((2, 2)))
+                prev_dim = hidden_dims[i]
+                patch_dim = ceil(patch_dim / 2)
+            self.mixer_blocks.append(MixerBlock(hidden_dims[i], patch_dim, token_dim, channel_dim, dropout=dropout))
+
+        self.layer_norm = nn.LayerNorm(hidden_dims[-1])
 
     def forward(self, x):
         x = self.to_patch_embedding(x)
