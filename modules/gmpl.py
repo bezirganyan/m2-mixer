@@ -9,6 +9,8 @@ class SpatialGatingUnit(nn.Module):
 
         self.norm = nn.LayerNorm(d_ffn // 2)
         self.proj = nn.Linear(seq_len, seq_len)
+        self.proj.weight.data.normal_(mean=0.0, std=0.02)
+        self.proj.bias.data.fill_(1.0)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):

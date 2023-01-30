@@ -2,12 +2,14 @@ import os
 from typing import List
 
 import numpy as np
+import torch
 from PIL import Image
 from omegaconf import DictConfig
 from tokenizers.implementations import BertWordPieceTokenizer
 from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
 import torchvision.transforms as T
+from torchvision.transforms import InterpolationMode
 
 from datasets.transforms import RuinModality
 from utils.projection import Projection
@@ -33,7 +35,7 @@ class MMIMDBDataModule(pl.LightningDataModule):
                 mean=[0.485, 0.456, 0.406],
                 std=[0.229, 0.224, 0.225]
             )]),
-            multimodal=T.RandomApply([RuinModality(p=0.3)], p=0.3))
+            multimodal=T.RandomApply([RuinModality(p=0.3)], p=0.6))
 
         val_test_transforms = dict(image=T.Compose([
             T.ToTensor(),
@@ -41,6 +43,14 @@ class MMIMDBDataModule(pl.LightningDataModule):
                 mean=[0.485, 0.456, 0.406],
                 std=[0.229, 0.224, 0.225]
             )]))
+
+        # train_transforms = dict(image=T.Compose([
+        # T.Resize(size=256, interpolation=InterpolationMode.BICUBIC, max_size=None, antialias=None),
+        # T.CenterCrop(size=(224, 224)),
+        # T.ToTensor(),
+        # T.Normalize(mean=torch.tensor([0.5000, 0.5000, 0.5000]), std=torch.tensor([0.5000, 0.5000, 0.5000]))]))
+        # val_test_transforms = train_transforms
+
         self.train_set = MMIMDBDataset(os.path.join(self.data_dir), stage='train', tokenizer=self.tokenizer,
                                        projection=self.projecion, max_seq_len=self.max_seq_len,
                                        transform=train_transforms)
@@ -100,7 +110,8 @@ class MMIMDBDataset(Dataset):
         labelpath = os.path.join(self.root_dir, self.stage, 'labels', f'label_{idx}.npy')
         textpath = os.path.join(self.root_dir, self.stage, 'text', f'text_{idx}.txt')
 
-        image = np.array(Image.open(imagepath).convert('RGB')).T
+        # image = np.array(Image.open(imagepath).convert('RGB')).T
+        image = Image.open(imagepath).convert('RGB')
         label = np.load(labelpath)
         with open(textpath, 'r') as f:
             text = f.read()
@@ -108,10 +119,11 @@ class MMIMDBDataset(Dataset):
         textlen = text.count(' ') + 1
 
         sample = {'image': image, 'text': text, 'label': label, 'textlen': textlen}
+
         if self.transform:
             for m in self.transform:
                 if m == 'image':
-                    sample[m] = self.transform[m](sample[m].T).mT
+                    sample[m] = self.transform[m](sample[m])
                 elif m == 'multimodal':
                     sample = self.transform[m](sample)
                 else:

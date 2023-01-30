@@ -13,13 +13,13 @@ from models.convnet import ConvNet
 from models.gmlp_autoencoder import GMLPAutoencoder, MMIMDGMLPClassifier
 from models.mixer_autoencoder import MixerAutoencoder, MMIMDBMixerGMLPClassifier, MMIMDBEncoderClassifier
 from models.mmimdb_gmlp import MMIDB_GMLP
-from models.mmimdb_mixer import MMIDB_Mixer, MMIDBPooler
+from models.mmimdb_mixer import MMIDBMixer, MMIDBPooler
 from utils.utils import deep_update, todict
 
 
 def get_model(model_type: str) -> type[pl.LightningModule]:
     if model_type == 'mmimdb_mixer':
-        return MMIDB_Mixer
+        return MMIDBMixer
     elif model_type == 'mmimdb_gmlp':
         return MMIDB_GMLP
     elif model_type == 'mmimdb_autoencoder':

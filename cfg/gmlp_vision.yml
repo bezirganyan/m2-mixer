@@ -7,12 +7,13 @@ train:
     betas: [0.9, 0.999]
     eps: 1e-8
   seed: 42
-
+  monitor: val_loss
+  monitor_mode: min
 dataset:
   type: mmimdb
   params:
     data_dir: ../output/
-    batch_size: 128
+    batch_size: 32
     num_workers: 8
     max_seq_len: 160
 
