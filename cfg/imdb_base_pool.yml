@@ -1,0 +1,70 @@
+train:
+  tensorboard_path: ./logs/
+  log_interval_steps: 10
+  epochs: 300
+  optimizer:
+    lr: 5e-4
+    betas: [0.9, 0.999]
+    eps: 1e-8
+    weight_decay: 0.0001
+    loss_pos_weight: [0.84615385, 2.04463587, 3.82083075, 3.99582396, 5.78238116,
+                           6.21670534, 8.65363128, 8.70180911, 11.60291734, 11.63363119,
+                           11.83168317, 12.383821, 14.90184049, 18.73604061, 18.29528536,
+                           21.87058824, 23.52996845, 25.53924915, 29.91848907, 35.76595745,
+                           40.03430079, 54.34519573, 75.99009901]
+  seed: 42
+  monitor: val_loss
+  monitor_mode: min
+
+dataset:
+  type: mmimdb_ext
+  params:
+    data_dir: ../data/mm_imdb/debug
+    batch_size: 16
+    num_workers: -1
+    max_seq_len: &max_seq_len 160
+
+    projection:
+      num_hashes: 64
+      feature_size: &feature_size 1024
+      window_size: &window_size 1
+
+    vocab:
+      tokenizer_type: wordpiece
+      tokenizer:
+        vocab: ./wordpiece/mbert_vocab.txt
+        lowercase: false
+        strip_accents: false
+        clean_text: false
+      vocab_path: vocab.npy
+
+model:
+  type: mmimdb_pooler
+  dropout: 0.5
+  modalities:
+    bottleneck:
+      window_size: *window_size
+      feature_size: *feature_size
+      hidden_dim: &hidden_dim 768
+    text:
+      num_mixers: 1
+      max_seq_len: *max_seq_len
+      hidden_dim: *hidden_dim
+      mlp_hidden_dim: 512
+    classification:
+      hidden_dim: *hidden_dim
+      proj_dim: *hidden_dim
+      num_classes: 23
+    image:
+      in_channels: 3
+      hidden_dims: [1024, 512, 256, 128, 64, 32]
+      patch_size: 16
+      image_size: [160, 256]
+      num_mixers: 1
+      token_dim: 32
+      channel_dim: 3072
+    multimodal:
+      hidden_dim: 768 # 768
+      num_mixers: 1
+      token_dim: 32
+      channel_dim: 64 # 512

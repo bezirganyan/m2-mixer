@@ -1,21 +1,18 @@
-from typing import List, Dict, Any
+from typing import List
 
-import numpy as np
 import torch
-import wandb
 from omegaconf import DictConfig
-# from sklearn.metrics import f1_score
 from torch.nn import BCEWithLogitsLoss
-import pytorch_lightning as pl
 from torchmetrics import F1Score
 
 from models.mmixer import MultimodalMixer
 from models.train_test_module import AbstractTrainTestModule
+from modules.mixer import MLPool
 
 
-class MMIDB_Mixer(AbstractTrainTestModule):
+class MMIDBMixer(AbstractTrainTestModule):
     def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
-        super(MMIDB_Mixer, self).__init__(optimizer_cfg, **kwargs)
+        super(MMIDBMixer, self).__init__(optimizer_cfg, **kwargs)
         self.optimizer_cfg = optimizer_cfg
         self.model = MultimodalMixer(
             model_cfg.modalities.image,
@@ -30,7 +27,7 @@ class MMIDB_Mixer(AbstractTrainTestModule):
         image = batch['image']
         text = batch['text']
         labels = batch['label']
-        logits = self.model(image, text)
+        logits = self.model(image.float(), text)
         loss = self.criterion(logits, labels.float())
         preds = torch.sigmoid(logits) > 0.5
 
@@ -41,17 +38,51 @@ class MMIDB_Mixer(AbstractTrainTestModule):
         }
 
     def setup_criterion(self) -> torch.nn.Module:
-        pw = torch.tensor([4.57642832, 7.38544978, 10.79846869, 13.23391421,
-                           15.59020924, 18.62735849, 22.48861048, 25.21711367,
-                           74.50943396, 31.31641554, 31.79549114, 32.90833333,
-                           39.64859438, 56.90201729, 40.46106557, 58.24483776,
-                           67.3890785, 84.92473118, 58.33087149, 62.68253968,
-                           114.13294798, 141.54121864, 116.83431953])
-        return BCEWithLogitsLoss(pos_weight=pw)
+        return BCEWithLogitsLoss()
 
     def setup_scores(self) -> List[torch.nn.Module]:
-        train_score = F1Score(task="multilabel", num_labels=23, average='weighted')
-        val_score = F1Score(task="multilabel", num_labels=23, average='weighted')
-        test_score = F1Score(task="multilabel", num_labels=23, average='weighted')
+        train_scores = dict(f1w=F1Score(task="multilabel", num_labels=23, average='weighted'),
+                            f1m=F1Score(task="multilabel", num_labels=23, average='macro'))
+        val_scores = dict(f1w=F1Score(task="multilabel", num_labels=23, average='weighted'),
+                          f1m=F1Score(task="multilabel", num_labels=23, average='macro'))
+        test_scores = dict(f1w=F1Score(task="multilabel", num_labels=23, average='weighted'),
+                           f1m=F1Score(task="multilabel", num_labels=23, average='macro'))
 
-        return [train_score, val_score, test_score]
+        return [train_scores, val_scores, test_scores]
+
+
+class MMIDBPooler(AbstractTrainTestModule):
+    def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
+        super(MMIDBPooler, self).__init__(optimizer_cfg, **kwargs)
+        self.optimizer_cfg = optimizer_cfg
+        self.model = MLPool(**model_cfg.modalities.image)
+        self.classifier = torch.nn.Linear(model_cfg.modalities.image.hidden_dims[-1],
+                                          model_cfg.modalities.classification.num_classes)
+
+    def shared_step(self, batch):
+        image = batch['image']
+        text = batch['text']
+        labels = batch['label']
+        logits = self.model(image)
+        logits = self.classifier(logits.mean(dim=1))
+        loss = self.criterion(logits, labels.float())
+        preds = torch.sigmoid(logits)
+
+        return {
+            'preds': preds,
+            'labels': labels,
+            'loss': loss
+        }
+
+    def setup_criterion(self) -> torch.nn.Module:
+        return BCEWithLogitsLoss(pos_weight=self.loss_pos_weight)
+
+    def setup_scores(self) -> List[torch.nn.Module]:
+        train_scores = dict(f1w=F1Score(task="multilabel", num_labels=23, average='weighted'),
+                            f1m=F1Score(task="multilabel", num_labels=23, average='macro'))
+        val_scores = dict(f1w=F1Score(task="multilabel", num_labels=23, average='weighted'),
+                          f1m=F1Score(task="multilabel", num_labels=23, average='macro'))
+        test_scores = dict(f1w=F1Score(task="multilabel", num_labels=23, average='weighted'),
+                           f1m=F1Score(task="multilabel", num_labels=23, average='macro'))
+
+        return [train_scores, val_scores, test_scores]
