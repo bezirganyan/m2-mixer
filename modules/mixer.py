@@ -99,7 +99,7 @@ class MLPMixer(nn.Module):
 
 class MLPool(nn.Module):
     def __init__(self, in_channels, hidden_dims, patch_size, image_size, num_mixers, token_dim, channel_dim,
-                 dropout=0.):
+                 dropout=0., pool_type='mean'):
         super().__init__()
 
         assert (image_size[0] % patch_size == 0) and (image_size[1] % patch_size == 0), 'Image dimensions must be divisible by the patch size.'
@@ -111,13 +111,20 @@ class MLPool(nn.Module):
 
         self.mixer_blocks = nn.ModuleList([])
 
+        if pool_type == 'mean':
+            pool = nn.MaxPool2d
+        elif pool_type == 'max':
+            pool = nn.AvgPool2d
+        else:
+            raise ValueError('Invalid pool type')
+
         prev_dim = hidden_dims[0]
         patch_dim = self.num_patch
         for i in range(0, len(hidden_dims)):
             if prev_dim != hidden_dims[i]:
-                self.mixer_blocks.append(nn.MaxPool2d((2, 2)))
+                self.mixer_blocks.append(pool((2, 2)))
                 prev_dim = hidden_dims[i]
-                patch_dim = ceil(patch_dim / 2)
+                patch_dim = patch_dim // 2
             self.mixer_blocks.append(MixerBlock(hidden_dims[i], patch_dim, token_dim, channel_dim, dropout=dropout))
 
         self.layer_norm = nn.LayerNorm(hidden_dims[-1])

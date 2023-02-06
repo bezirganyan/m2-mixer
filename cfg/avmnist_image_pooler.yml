@@ -1,0 +1,34 @@
+train:
+  tensorboard_path: ./logs/
+  log_interval_steps: 10
+  epochs: 300
+  optimizer:
+    lr: 5e-4
+    betas: [0.9, 0.999]
+    eps: 1e-8
+  seed: 42
+  monitor: val_loss
+  monitor_mode: min
+
+dataset:
+  type: avmnist
+  params:
+    data_dir: ../_MFAS/avmnist
+    batch_size: 64
+    num_workers: -1
+
+model:
+  type: avmnist_image_pooler
+#  dropout: 0.5
+  modalities:
+    classification:
+      num_classes: 10
+    image:
+      in_channels: 1
+      hidden_dims: [16, 8]
+      patch_size: 4
+      image_size: [28, 28]
+      token_dim: 8
+      channel_dim: 16
+      pool_type: max
+      num_mixers: 1

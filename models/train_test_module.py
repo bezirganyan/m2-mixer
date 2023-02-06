@@ -22,6 +22,16 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
         self.train_scores, self.val_scores, self.test_scores = self.setup_scores()
         if any([isinstance(self.train_scores, list), isinstance(self.val_scores, list), isinstance(self.test_scores, list)]):
             raise ValueError('Scores must be a dict')
+        self.best_epochs = {'val_loss': None}
+        if self.val_scores is not None:
+            for metric in self.val_scores:
+                self.best_epochs[metric] = None
+
+        trainable_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
+        total_parameters = sum(p.numel() for p in self.parameters())
+
+        wandb.run.summary['trainable_parameters'] = trainable_parameters
+        wandb.run.summary['total_parameters'] = total_parameters
 
 
     @abc.abstractmethod
@@ -74,7 +84,19 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
                 val_score = self.val_scores[metric].compute()
                 wandb.log({f'val_{metric}': val_score})
                 self.log(f'val_{metric}', val_score, prog_bar=True, logger=True)
-        wandb.log({'val_loss': np.mean([output['loss'].cpu().item() for output in outputs])})
+        val_loss = np.mean([output['loss'].cpu().item() for output in outputs])
+        wandb.log({'val_loss': val_loss})
+        if self.best_epochs['val_loss'] is None or (val_loss < self.best_epochs['val_loss'][1]):
+            self.best_epochs['val_loss'] = (self.current_epoch, val_loss)
+            wandb.run.summary['best_val_loss'] = val_loss
+            wandb.run.summary['best_val_loss_epoch'] = self.current_epoch
+        if self.val_scores is not None:
+            for metric in self.val_scores:
+                val_score = self.val_scores[metric].compute()
+                if self.best_epochs[metric] is None or (val_score > self.best_epochs[metric][1]):
+                    self.best_epochs[metric] = (self.current_epoch, val_score)
+                    wandb.run.summary[f'best_val_{metric}'] = val_score
+                    wandb.run.summary[f'best_val_{metric}_epoch'] = self.current_epoch
 
     def test_step(self, batch, batch_idx):
         if self.test_scores is not None:
@@ -93,7 +115,6 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
                 test_score = self.test_scores[metric].compute()
                 wandb.log({f'test_{metric}': test_score})
                 self.log(f'test_{metric}', test_score, prog_bar=True, logger=True)
-            wandb.log({'test_score': self.test_score.compute()})
 
     def configure_optimizers(self):
         optimizer_cfg = self.optimizer_cfg

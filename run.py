@@ -3,12 +3,14 @@ import os
 
 import wandb
 
+from datasets.avmnist import AVMnistDataModule
 from datasets.get_processed_mmimdb import MMIMDBExtDataModule
 from datasets.imagenet_dataset import ImagenetDataModule
 from datasets.multimodal import MMIMDBDataModule
 from omegaconf import OmegaConf
 import pytorch_lightning as pl
 
+from models.avmnist import AVMnistImagePooler, AVMnistImageMixer, AVMnistMixer
 from models.convnet import ConvNet
 from models.gmlp_autoencoder import GMLPAutoencoder, MMIMDGMLPClassifier
 from models.imagenet_mixer import ImagenetPooler
@@ -39,6 +41,12 @@ def get_model(model_type: str) -> type[pl.LightningModule]:
         return MMIDBPooler
     elif model_type == 'imagenet_pooler':
         return ImagenetPooler
+    elif model_type == 'avmnist_image_pooler':
+        return AVMnistImagePooler
+    elif model_type == 'avmnist_image_mixer':
+        return AVMnistImageMixer
+    elif model_type == 'avmnist_mixer':
+        return AVMnistMixer
     else:
         raise NotImplementedError
 
@@ -50,6 +58,8 @@ def get_data_module(data_type: str) -> type[pl.LightningDataModule]:
         return MMIMDBExtDataModule
     elif data_type == 'imagenet':
         return ImagenetDataModule
+    elif data_type == 'avmnist':
+        return AVMnistDataModule
     else:
         raise NotImplementedError
 
