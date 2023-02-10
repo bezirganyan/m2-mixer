@@ -10,7 +10,8 @@ from datasets.multimodal import MMIMDBDataModule
 from omegaconf import OmegaConf
 import pytorch_lightning as pl
 
-from models.avmnist import AVMnistImagePooler, AVMnistImageMixer, AVMnistMixer
+from models.avmnist import AVMnistImagePooler, AVMnistImageMixer, AVMnistMixer, AVMnistAudioMixer, AVMnistgMLP, \
+    AVMnistMixerLF, AVMnistMixerMultiLoss
 from models.convnet import ConvNet
 from models.gmlp_autoencoder import GMLPAutoencoder, MMIMDGMLPClassifier
 from models.imagenet_mixer import ImagenetPooler
@@ -47,6 +48,14 @@ def get_model(model_type: str) -> type[pl.LightningModule]:
         return AVMnistImageMixer
     elif model_type == 'avmnist_mixer':
         return AVMnistMixer
+    elif model_type == 'avmnist_audio_mixer':
+        return AVMnistAudioMixer
+    elif model_type == 'avmnist_gmlp':
+        return AVMnistgMLP
+    elif model_type == 'avmnist_mixer_lf':
+        return AVMnistMixerLF
+    elif model_type == 'avmnist_mixer_3loss':
+        return AVMnistMixerMultiLoss
     else:
         raise NotImplementedError
 
@@ -110,7 +119,7 @@ if __name__ == '__main__':
 
     trainer = pl.Trainer(
         callbacks=[
-            # pl.callbacks.EarlyStopping(monitor='val_loss', patience=20, mode='max'),
+            pl.callbacks.EarlyStopping(monitor='val_loss', patience=30, mode='min'),
             pl.callbacks.ModelCheckpoint(
                 monitor=train_cfg.monitor,
                 save_last=True,

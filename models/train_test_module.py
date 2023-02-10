@@ -90,13 +90,10 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
             self.best_epochs['val_loss'] = (self.current_epoch, val_loss)
             wandb.run.summary['best_val_loss'] = val_loss
             wandb.run.summary['best_val_loss_epoch'] = self.current_epoch
-        if self.val_scores is not None:
-            for metric in self.val_scores:
-                val_score = self.val_scores[metric].compute()
-                if self.best_epochs[metric] is None or (val_score > self.best_epochs[metric][1]):
-                    self.best_epochs[metric] = (self.current_epoch, val_score)
+            if self.val_scores is not None:
+                for metric in self.val_scores:
+                    val_score = self.val_scores[metric].compute()
                     wandb.run.summary[f'best_val_{metric}'] = val_score
-                    wandb.run.summary[f'best_val_{metric}_epoch'] = self.current_epoch
 
     def test_step(self, batch, batch_idx):
         if self.test_scores is not None:

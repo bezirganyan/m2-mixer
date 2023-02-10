@@ -13,7 +13,7 @@ train:
 dataset:
   type: avmnist
   params:
-    data_dir: ../data/avmnist_orig/avmnist
+    data_dir: ../_MFAS/avmnist_total_corr
     batch_size: 64
     num_workers: -1
 

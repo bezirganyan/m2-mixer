@@ -1,0 +1,32 @@
+program: run.py
+method: bayes
+name: Reducing
+metric:
+  goal: minimize
+  name: val_loss
+parameters:
+  model:
+    parameters:
+      modalities:
+        parameters:
+          image:
+            parameters:
+              num_mixers:
+                values: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+          text:
+            parameters:
+              num_mixers:
+                values: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+          multimodal:
+            parameters:
+              num_mixers:
+                values: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+command:
+  - ${env}
+  - ${interpreter}
+  - ${program}
+  - "-c"
+  - "cfg/imdb_base.yml"
+  - "-n"
+  - "BaseTuning"
+  - ${args}
