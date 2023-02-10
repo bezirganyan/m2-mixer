@@ -27,12 +27,7 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
             for metric in self.val_scores:
                 self.best_epochs[metric] = None
 
-        trainable_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
-        total_parameters = sum(p.numel() for p in self.parameters())
-
-        wandb.run.summary['trainable_parameters'] = trainable_parameters
-        wandb.run.summary['total_parameters'] = total_parameters
-
+        self.logged_n_paarameters = False
 
     @abc.abstractmethod
     def setup_criterion(self) -> torch.nn.Module:
@@ -46,7 +41,17 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
     def shared_step(self, batch) -> Dict[str, Any]:
         raise NotImplementedError
 
+    def log_n_parameters(self):
+        if not self.logged_n_paarameters:
+            trainable_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
+            total_parameters = sum(p.numel() for p in self.parameters())
+
+            wandb.run.summary['trainable_parameters'] = trainable_parameters
+            wandb.run.summary['total_parameters'] = total_parameters
+            self.logged_n_paarameters = True
+
     def training_step(self, batch, batch_idx):
+        self.log_n_parameters()
         if self.train_scores is not None:
             for metric in self.train_scores:
                 self.train_scores[metric].to(self.device)
@@ -96,6 +101,7 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
                     wandb.run.summary[f'best_val_{metric}'] = val_score
 
     def test_step(self, batch, batch_idx):
+        self.log_n_parameters()
         if self.test_scores is not None:
             for metric in self.test_scores:
                 self.test_scores[metric].to(self.device)
