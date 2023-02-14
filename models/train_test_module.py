@@ -10,8 +10,9 @@ from torchmetrics import Metric
 
 
 class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
-    def __init__(self, optimizer_cfg: DictConfig, **kwargs):
+    def __init__(self, optimizer_cfg: DictConfig, log_confusion_matrix: bool = False, **kwargs):
         self.optimizer_cfg = optimizer_cfg
+        self.log_confusion_matrix = log_confusion_matrix
         self.loss_pos_weight = torch.tensor(optimizer_cfg.loss_pos_weight) if 'loss_pos_weight' in optimizer_cfg \
             else None
         if 'loss_pos_weight' in optimizer_cfg:
@@ -99,6 +100,15 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
                 for metric in self.val_scores:
                     val_score = self.val_scores[metric].compute()
                     wandb.run.summary[f'best_val_{metric}'] = val_score
+        if self.log_confusion_matrix:
+            preds = torch.cat([output['preds'].cpu() for output in outputs])
+            labs = torch.cat([output['labels'].cpu() for output in outputs])
+            wandb.log({'conf_mat': wandb.plot.confusion_matrix(
+                probs=None,
+                y_true=labs.long().cpu().numpy(),
+                preds=preds.long().cpu().numpy(),
+                class_names=range(max(preds.max().item(), labs.max().item())+1),
+            )})
 
     def test_step(self, batch, batch_idx):
         self.log_n_parameters()
@@ -118,6 +128,15 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
                 test_score = self.test_scores[metric].compute()
                 wandb.log({f'test_{metric}': test_score})
                 self.log(f'test_{metric}', test_score, prog_bar=True, logger=True)
+        if self.log_confusion_matrix:
+            preds = torch.cat([output['preds'].cpu() for output in outputs])
+            labs = torch.cat([output['labels'].cpu() for output in outputs])
+            wandb.log({'conf_mat': wandb.plot.confusion_matrix(
+                probs=None,
+                y_true=labs.long().cpu().numpy(),
+                preds=preds.long().cpu().numpy(),
+                class_names=range(max(preds.max().item(), labs.max().item())+1),
+            )})
 
     def configure_optimizers(self):
         optimizer_cfg = self.optimizer_cfg

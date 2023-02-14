@@ -1,0 +1,47 @@
+train:
+  tensorboard_path: ./logs/
+  log_interval_steps: 10
+  epochs: 300
+  optimizer:
+    lr: 5e-4
+    betas: [0.9, 0.999]
+    eps: 1e-8
+    weight_decay: 0.0
+  seed: 42
+  monitor: val_loss
+  monitor_mode: min
+
+dataset:
+  type: avmnist
+  params:
+    data_dir: ../data/avmnist_orig/avmnist
+    batch_size: 32
+    num_workers: -1
+
+model:
+  type: avmnist_mixer_3loss
+  dropout: 0.5
+  modalities:
+    classification:
+      num_classes: 10
+    image:
+      in_channels: 1
+      hidden_dim: 128
+      patch_size: 4
+      image_size: [28, 28]
+      token_dim: 32
+      channel_dim: 3072
+      num_mixers: 4
+    audio:
+      in_channels: 1
+      hidden_dim: 128
+      patch_size: 16
+      image_size: [112, 112]
+      token_dim: 32
+      channel_dim: 3072
+      num_mixers: 4
+    multimodal:
+      hidden_dim: 128
+      token_dim: 32
+      channel_dim: 3072
+      num_mixers: 2
