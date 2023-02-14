@@ -41,7 +41,7 @@ class SumFusion:
         pass
 
     def __call__(self, *args):
-        return torch.sum(*args)
+        return torch.add(*args)
 
 
 class MeanFusion:
@@ -49,4 +49,4 @@ class MeanFusion:
         pass
 
     def __call__(self, *args):
-        return torch.mean(*args)
+        return torch.mean(torch.stack(args), 0)
