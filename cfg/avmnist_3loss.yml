@@ -19,7 +19,7 @@ dataset:
     num_workers: -1
 
 model:
-  type: avmnist_mixer_3loss
+  type: AVMnistMixerMultiLoss
   dropout: 0.5
   modalities:
     classification:
