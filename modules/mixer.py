@@ -7,13 +7,14 @@ from einops.layers.torch import Rearrange
 
 
 class FeedForward(nn.Module):
-    def __init__(self, dim, hidden_dim, dropout=0.):
+    def __init__(self, dim, hidden_dim, dropout=0., out_dim=None):
         super().__init__()
+        out_dim = out_dim or dim
         self.net = nn.Sequential(
             nn.Linear(dim, hidden_dim),
             nn.GELU(),
             nn.Dropout(dropout),
-            nn.Linear(hidden_dim, dim),
+            nn.Linear(hidden_dim, out_dim),
             nn.Dropout(dropout)
         )
 
@@ -48,7 +49,7 @@ class MixerBlock(nn.Module):
 
 class FusionMixer(nn.Module):
     def __init__(self, hidden_dim, num_patches, num_mixers, token_dim, channel_dim,
-                 dropout=0.):
+                 dropout=0., **kwargs):
         super().__init__()
 
         self.num_patch = num_patches
@@ -68,12 +69,14 @@ class FusionMixer(nn.Module):
         x = self.layer_norm(x)
         return x
 
+
 class MLPMixer(nn.Module):
     def __init__(self, in_channels, hidden_dim, patch_size, image_size, num_mixers, token_dim, channel_dim,
-                 dropout=0.):
+                 dropout=0., **kwargs):
         super().__init__()
 
-        assert (image_size[0] % patch_size == 0) and (image_size[1] % patch_size == 0), 'Image dimensions must be divisible by the patch size.'
+        assert (image_size[0] % patch_size == 0) and (
+                    image_size[1] % patch_size == 0), 'Image dimensions must be divisible by the patch size.'
         self.num_patch = (image_size[0] // patch_size) * (image_size[1] // patch_size)
         self.to_patch_embedding = nn.Sequential(
             nn.Conv2d(in_channels, hidden_dim, patch_size, patch_size),
@@ -99,10 +102,11 @@ class MLPMixer(nn.Module):
 
 class MLPool(nn.Module):
     def __init__(self, in_channels, hidden_dims, patch_size, image_size, num_mixers, token_dim, channel_dim,
-                 dropout=0., pool_type='mean'):
+                 dropout=0., pool_type='mean', **kwargs):
         super().__init__()
 
-        assert (image_size[0] % patch_size == 0) and (image_size[1] % patch_size == 0), 'Image dimensions must be divisible by the patch size.'
+        assert (image_size[0] % patch_size == 0) and (
+                    image_size[1] % patch_size == 0), 'Image dimensions must be divisible by the patch size.'
         self.num_patch = (image_size[0] // patch_size) * (image_size[1] // patch_size)
         self.to_patch_embedding = nn.Sequential(
             nn.Conv2d(in_channels, hidden_dims[0], patch_size, patch_size),
@@ -138,9 +142,10 @@ class MLPool(nn.Module):
         x = self.layer_norm(x)
         return x
 
+
 class PNLPMixer(nn.Module):
     def __init__(self, max_seq_len, hidden_dim, num_mixers, mlp_hidden_dim,
-                 dropout=0.):
+                 dropout=0., **kwargs):
         super().__init__()
 
         # hidden_dim = dim
@@ -148,11 +153,11 @@ class PNLPMixer(nn.Module):
         # seq_hidden_dim = token_dim
         # channel_hidden_dim = channel_dim
 
-
         self.mixer_blocks = nn.ModuleList([])
 
         for _ in range(num_mixers):
-            self.mixer_blocks.append(MixerBlock(hidden_dim, max_seq_len, mlp_hidden_dim, mlp_hidden_dim, dropout=dropout))
+            self.mixer_blocks.append(
+                MixerBlock(hidden_dim, max_seq_len, mlp_hidden_dim, mlp_hidden_dim, dropout=dropout))
 
         self.layer_norm = nn.LayerNorm(hidden_dim)
 
@@ -167,6 +172,7 @@ class PNLPMixer(nn.Module):
             x = mixer_block(x)
         x = self.layer_norm(x)
         return x
+
 
 if __name__ == "__main__":
     img = torch.ones([1, 3, 224, 224])

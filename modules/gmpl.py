@@ -53,13 +53,13 @@ class GatingMlpBlock(nn.Module):
 
 class gMLP(nn.Module):
     def __init__(
-        self,
-        d_model,
-        d_ffn,
-        seq_len,
-        n_blocks,
-        prob_0_L=(1, 0.5),
-        dropout=0.
+            self,
+            d_model,
+            d_ffn,
+            seq_len,
+            n_blocks,
+            prob_0_L=(1, 0.5),
+            dropout=0.
     ):
         super().__init__()
 
@@ -76,28 +76,30 @@ class gMLP(nn.Module):
 
 class VisiongMLP(nn.Module):
     def __init__(
-        self,
-        image_size,
-        n_channels,
-        patch_size,
-        d_model,
-        d_ffn,
-        n_blocks,
-        n_classes,
-        prob_0_L=(1, 0),
-        dropout=0.
+            self,
+            image_size,
+            in_channels,
+            patch_size,
+            d_model,
+            d_ffn,
+            n_blocks,
+            # n_classes,
+            prob_0_L=(1, 0),
+            dropout=0.,
+            **kwargs
     ):
         super().__init__()
 
-        assert (image_size[0] % patch_size == 0) and (image_size[1] % patch_size == 0), 'Image dimensions must be divisible by the patch size.'
-        self.n_patches = (image_size[0] // patch_size) * (image_size[1] // patch_size)
+        assert (image_size[0] % patch_size == 0) and (
+                    image_size[1] % patch_size == 0), 'Image dimensions must be divisible by the patch size.'
+        self.num_patch = (image_size[0] // patch_size) * (image_size[1] // patch_size)
         self.patch_size = patch_size
-        self.seq_len = self.n_patches + 1
+        self.seq_len = self.num_patch
 
-        self.patch_embedding = nn.Linear(n_channels * patch_size ** 2, d_model)
+        self.patch_embedding = nn.Linear(in_channels * patch_size ** 2, d_model)
         self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
         self.gmlp = gMLP(d_model, d_ffn, self.seq_len, n_blocks, prob_0_L, dropout)
-        self.head = nn.Linear(d_model, n_classes)
+        # self.head = nn.Linear(d_model, n_classes)
 
     def forward(self, x):
         n_samples = x.shape[0]
@@ -107,12 +109,42 @@ class VisiongMLP(nn.Module):
         )
         x = self.patch_embedding(x)
 
+        # cls_token = self.cls_token.expand(n_samples, 1, -1)
+        # x = torch.cat((cls_token, x), dim=1)
+
+        x = self.gmlp(x)
+        # cls_token_final = x[:, 0]
+        # x = self.head(cls_token_final)
+        return x
+
+
+class FusiongMLP(nn.Module):
+    def __init__(
+            self,
+            d_model,
+            d_ffn,
+            n_blocks,
+            num_patches,
+            prob_0_L=(1, 0),
+            dropout=0.,
+            **kwargs
+    ):
+        super().__init__()
+
+        self.num_patch = num_patches
+        self.seq_len = self.num_patch + 1
+
+        # self.patch_embedding = nn.Linear(n_channels * patch_size ** 2, d_model)
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, d_model))
+        self.gmlp = gMLP(d_model, d_ffn, self.seq_len, n_blocks, prob_0_L, dropout)
+
+    def forward(self, x):
+        n_samples = x.shape[0]
+
         cls_token = self.cls_token.expand(n_samples, 1, -1)
         x = torch.cat((cls_token, x), dim=1)
 
         x = self.gmlp(x)
-        cls_token_final = x[:, 0]
-        x = self.head(cls_token_final)
         return x
 
 

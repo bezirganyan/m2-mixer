@@ -12,6 +12,7 @@ import torch
 from typing import List
 from torch.nn import CrossEntropyLoss
 from torchmetrics import Accuracy
+import modules
 
 
 class AVMnistImagePooler(AbstractTrainTestModule):
@@ -196,22 +197,25 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         audio_config = model_cfg.modalities.audio
         multimodal_config = model_cfg.modalities.multimodal
         dropout = model_cfg.get('dropout', 0.0)
-        self.image_mixer = MLPMixer(**image_config, dropout=dropout)
-        self.audio_mixer = MLPMixer(**audio_config, dropout=dropout)
+        self.image_mixer = modules.get_block_by_name(**image_config, dropout=dropout)
+        self.audio_mixer = modules.get_block_by_name(**audio_config, dropout=dropout)
         num_patches = self.image_mixer.num_patch + self.audio_mixer.num_patch
-        # num_patches = self.image_mixer.num_patch
-        self.fusion_mixer = FusionMixer(**multimodal_config, num_patches=num_patches, dropout=dropout)
+        self.fusion_mixer = modules.get_block_by_name(**multimodal_config, num_patches=num_patches, dropout=dropout)
         self.classifier_image = torch.nn.Linear(model_cfg.modalities.image.hidden_dim,
                                                 model_cfg.modalities.classification.num_classes)
         self.classifier_audio = torch.nn.Linear(model_cfg.modalities.audio.hidden_dim,
                                                 model_cfg.modalities.classification.num_classes)
         self.classifier_fusion = torch.nn.Linear(model_cfg.modalities.image.hidden_dim,
                                                  model_cfg.modalities.classification.num_classes)
+
+        self.fusion_function = modules.get_fusion_by_name(**model_cfg.modalities.multimodal)
         self.image_criterion = CrossEntropyLoss()
         self.audio_criterion = CrossEntropyLoss()
         self.fusion_criterion = CrossEntropyLoss()
 
     def shared_step(self, batch):
+        # Load data
+
         image = batch['image']
         audio = batch['audio']
         labels = batch['label']
@@ -221,17 +225,26 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         elif self.mute == 'audio':
             audio = torch.zeros_like(audio)
 
+        # get modality encodings from feature extractors
         image_logits = self.image_mixer(image)
         audio_logits = self.audio_mixer(audio)
-        # logits = self.fusion_mixer(torch.maximum(image_logits, audio_logits))
-        logits = self.fusion_mixer(torch.cat([image_logits, audio_logits], dim=1))
+
+        # fuse modalities
+        fused_moalities = self.fusion_function(image_logits, audio_logits)
+        logits = self.fusion_mixer(fused_moalities)
+
+        # get logits for each modality
         image_logits = self.classifier_image(image_logits.mean(dim=1))
         audio_logits = self.classifier_audio(audio_logits.mean(dim=1))
         logits = self.classifier_fusion(logits.mean(dim=1))
+
+        # compute losses
         loss_image = self.image_criterion(image_logits, labels)
         loss_audio = self.audio_criterion(audio_logits, labels)
         loss_fusion = self.fusion_criterion(logits, labels)
         loss = loss_image + loss_audio + loss_fusion
+
+        # get predictions
         preds = torch.softmax(logits, dim=1).argmax(dim=1)
 
         return {
@@ -278,7 +291,6 @@ class AVMnistMixerMultiLossGated(AbstractTrainTestModule):
         self.image_criterion = CrossEntropyLoss()
         self.audio_criterion = CrossEntropyLoss()
         self.fusion_criterion = CrossEntropyLoss()
-
 
     def shared_step(self, batch):
         image = batch['image']
