@@ -21,7 +21,6 @@ dataset:
 model:
   type: avmnist_mixer_3loss
   dropout: 0.5
-  mute: audio
   modalities:
     classification:
       num_classes: 10
