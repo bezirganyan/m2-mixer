@@ -11,7 +11,7 @@ from omegaconf import OmegaConf
 import pytorch_lightning as pl
 
 from models.avmnist import AVMnistImagePooler, AVMnistImageMixer, AVMnistMixer, AVMnistAudioMixer, AVMnistgMLP, \
-    AVMnistMixerLF, AVMnistMixerMultiLoss
+    AVMnistMixerLF, AVMnistMixerMultiLoss, AVMnistMixerMultiLossGated
 from models.convnet import ConvNet
 from models.gmlp_autoencoder import GMLPAutoencoder, MMIMDGMLPClassifier
 from models.imagenet_mixer import ImagenetPooler
@@ -56,6 +56,8 @@ def get_model(model_type: str) -> type[pl.LightningModule]:
         return AVMnistMixerLF
     elif model_type == 'avmnist_mixer_3loss':
         return AVMnistMixerMultiLoss
+    elif model_type == 'avmnist_mixer_gated_4loss':
+        return AVMnistMixerMultiLossGated
     else:
         raise NotImplementedError
 
