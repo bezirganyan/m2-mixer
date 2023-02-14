@@ -7,7 +7,7 @@ from torchvision.models import resnet50
 from torch import nn
 import torch
 
-from models.train_test_module import AbstractTrainTestModule
+from modules.train_test_module import AbstractTrainTestModule
 
 
 class ConvNet(AbstractTrainTestModule):

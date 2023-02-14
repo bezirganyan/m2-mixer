@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 from omegaconf import DictConfig
 
-from models.train_test_module import AbstractTrainTestModule
+from modules.train_test_module import AbstractTrainTestModule
 from modules.fusion import BiModalGatedUnit
 from modules.gmpl import VisiongMLP, FusiongMLP
 from modules.mixer import MLPool, MLPMixer, FusionMixer
@@ -12,7 +12,6 @@ import torch
 from typing import List
 from torch.nn import CrossEntropyLoss
 from torchmetrics import Accuracy
-from torch import nn
 
 
 class AVMnistImagePooler(AbstractTrainTestModule):

@@ -5,7 +5,7 @@ from omegaconf import DictConfig
 from torch.nn import CrossEntropyLoss
 from torchmetrics import Accuracy
 
-from models.train_test_module import AbstractTrainTestModule
+from modules.train_test_module import AbstractTrainTestModule
 from modules.mixer import MLPool
 
 

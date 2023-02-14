@@ -6,7 +6,7 @@ from torch.nn import BCEWithLogitsLoss
 from torchmetrics import F1Score
 
 from models.mmixer import MultimodalMixer
-from models.train_test_module import AbstractTrainTestModule
+from modules.train_test_module import AbstractTrainTestModule
 from modules.mixer import MLPool
 
 
