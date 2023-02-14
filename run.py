@@ -3,6 +3,7 @@ import os
 
 import wandb
 
+import models
 from datasets.avmnist import AVMnistDataModule
 from datasets.get_processed_mmimdb import MMIMDBExtDataModule
 from datasets.imagenet_dataset import ImagenetDataModule
@@ -10,56 +11,7 @@ from datasets.multimodal import MMIMDBDataModule
 from omegaconf import OmegaConf
 import pytorch_lightning as pl
 
-from models.avmnist import AVMnistImagePooler, AVMnistImageMixer, AVMnistMixer, AVMnistAudioMixer, AVMnistgMLP, \
-    AVMnistMixerLF, AVMnistMixerMultiLoss, AVMnistMixerMultiLossGated
-from models.convnet import ConvNet
-from models.gmlp_autoencoder import GMLPAutoencoder, MMIMDGMLPClassifier
-from models.imagenet_mixer import ImagenetPooler
-from models.mixer_autoencoder import MixerAutoencoder, MMIMDBMixerGMLPClassifier, MMIMDBEncoderClassifier
-from models.mmimdb_gmlp import MMIDB_GMLP
-from models.mmimdb_mixer import MMIDBMixer, MMIDBPooler
 from utils.utils import deep_update, todict
-
-
-def get_model(model_type: str) -> type[pl.LightningModule]:
-    if model_type == 'mmimdb_mixer':
-        return MMIDBMixer
-    elif model_type == 'mmimdb_gmlp':
-        return MMIDB_GMLP
-    elif model_type == 'mmimdb_autoencoder':
-        return MixerAutoencoder
-    elif model_type == 'mmimdb_autoencoder_classifier':
-        return MMIMDBEncoderClassifier
-    elif model_type == 'mmimdb_gmlp_autoencoder':
-        return GMLPAutoencoder
-    elif model_type == 'mmimdb_autoencoder_classifier':
-        return MMIMDBMixerGMLPClassifier
-    elif model_type == 'mmimdb_autoencoder_gmlp_classifier':
-        return MMIMDGMLPClassifier
-    elif model_type == 'mmimdb_convnet':
-        return ConvNet
-    elif model_type == 'mmimdb_pooler':
-        return MMIDBPooler
-    elif model_type == 'imagenet_pooler':
-        return ImagenetPooler
-    elif model_type == 'avmnist_image_pooler':
-        return AVMnistImagePooler
-    elif model_type == 'avmnist_image_mixer':
-        return AVMnistImageMixer
-    elif model_type == 'avmnist_mixer':
-        return AVMnistMixer
-    elif model_type == 'avmnist_audio_mixer':
-        return AVMnistAudioMixer
-    elif model_type == 'avmnist_gmlp':
-        return AVMnistgMLP
-    elif model_type == 'avmnist_mixer_lf':
-        return AVMnistMixerLF
-    elif model_type == 'avmnist_mixer_3loss':
-        return AVMnistMixerMultiLoss
-    elif model_type == 'avmnist_mixer_gated_4loss':
-        return AVMnistMixerMultiLossGated
-    else:
-        raise NotImplementedError
 
 
 def get_data_module(data_type: str) -> type[pl.LightningDataModule]:
@@ -107,7 +59,7 @@ if __name__ == '__main__':
     else:
         wandb.init(project='MMixer', name=args.name, config=todict(cfg))
 
-    model = get_model(model_cfg.type)
+    model = models.get_model(model_cfg.type)
     if args.ckpt:
         train_module = model.load_from_checkpoint(args.ckpt, optimizer_cfg=train_cfg.optimizer,
                                                   model_cfg=model_cfg)
