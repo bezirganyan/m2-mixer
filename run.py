@@ -3,28 +3,12 @@ import os
 
 import wandb
 
+import datasets
 import models
-from datasets.avmnist import AVMnistDataModule
-from datasets.get_processed_mmimdb import MMIMDBExtDataModule
-from datasets.imagenet_dataset import ImagenetDataModule
-from datasets.multimodal import MMIMDBDataModule
 from omegaconf import OmegaConf
 import pytorch_lightning as pl
 
 from utils.utils import deep_update, todict
-
-
-def get_data_module(data_type: str) -> type[pl.LightningDataModule]:
-    if data_type == 'mmimdb':
-        return MMIMDBDataModule
-    elif data_type == 'mmimdb_ext':
-        return MMIMDBExtDataModule
-    elif data_type == 'imagenet':
-        return ImagenetDataModule
-    elif data_type == 'avmnist':
-        return AVMnistDataModule
-    else:
-        raise NotImplementedError
 
 
 def parse_args() -> tuple[argparse.Namespace, list[str]]:
@@ -66,7 +50,7 @@ if __name__ == '__main__':
     else:
         train_module = model(model_cfg, train_cfg.optimizer)
     wandb.watch(train_module)
-    data_module = get_data_module(dataset_cfg.type)
+    data_module = datasets.get_data_module(dataset_cfg.type)
     if dataset_cfg.params.num_workers == -1:
         dataset_cfg.params.num_workers = os.cpu_count()
     data_module = data_module(**dataset_cfg.params)

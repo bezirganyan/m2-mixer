@@ -12,7 +12,7 @@ train:
   monitor_mode: min
 
 dataset:
-  type: avmnist
+  type: AVMnistDataModule
   params:
     data_dir: ../data/avmnist_orig/avmnist
     batch_size: 32
