@@ -3,7 +3,7 @@ train:
   log_interval_steps: 10
   epochs: 300
   optimizer:
-    lr: 5e-4
+    lr: 1e-4
     betas: [0.9, 0.999]
     eps: 1e-8
     weight_decay: 0.0
@@ -25,27 +25,27 @@ model:
     classification:
       num_classes: 10
     image:
-      block_type: MLPMixer
+      block_type: DynaMixer
       in_channels: 1
-      hidden_dim: 128
+      hidden_dim: 256
       patch_size: 4
       image_size: [28, 28]
-      token_dim: 32
-      channel_dim: 3072
-      num_mixers: 4
+      num_head: 8
+      num_mixers: 8
+      reduced_dim: 2
     audio:
-      block_type: MLPMixer
+      block_type: DynaMixer
       in_channels: 1
-      hidden_dim: 128
+      hidden_dim: 256
       patch_size: 16
       image_size: [112, 112]
-      token_dim: 32
-      channel_dim: 3072
-      num_mixers: 4
+      num_head: 8
+      num_mixers: 8
+      reduced_dim: 2
     multimodal:
-      block_type: FusionMixer
-      fusion_function: ConcatFusion
-      hidden_dim: 128
-      token_dim: 32
-      channel_dim: 3072
-      num_mixers: 2
+      block_type: FusionDynaMixer
+      fusion_function: MaxFusion
+      hidden_dim: 256
+      num_head: 8
+      num_mixers: 4
+      reduced_dim: 2

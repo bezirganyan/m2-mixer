@@ -201,7 +201,8 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         dropout = model_cfg.get('dropout', 0.0)
         self.image_mixer = modules.get_block_by_name(**image_config, dropout=dropout)
         self.audio_mixer = modules.get_block_by_name(**audio_config, dropout=dropout)
-        num_patches = self.image_mixer.num_patch + self.audio_mixer.num_patch
+        # num_patches = self.image_mixer.num_patch + self.audio_mixer.num_patch
+        num_patches = self.image_mixer.num_patch
         self.fusion_mixer = modules.get_block_by_name(**multimodal_config, num_patches=num_patches, dropout=dropout)
         self.classifier_image = torch.nn.Linear(model_cfg.modalities.image.hidden_dim,
                                                 model_cfg.modalities.classification.num_classes)
@@ -235,10 +236,15 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         fused_moalities = self.fusion_function(image_logits, audio_logits)
         logits = self.fusion_mixer(fused_moalities)
 
+        logits = logits.reshape(logits.shape[0], -1, logits.shape[-1])
+        audio_logits = audio_logits.reshape(audio_logits.shape[0], -1, audio_logits.shape[-1])
+        image_logits = image_logits.reshape(image_logits.shape[0], -1, image_logits.shape[-1])
+
         # get logits for each modality
         image_logits = self.classifier_image(image_logits.mean(dim=1))
         audio_logits = self.classifier_audio(audio_logits.mean(dim=1))
         logits = self.classifier_fusion(logits.mean(dim=1))
+
 
         # compute losses
         loss_image = self.image_criterion(image_logits, labels)
