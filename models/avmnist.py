@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
+from os import path
 
+import wandb
 from omegaconf import DictConfig
 
 from modules.train_test_module import AbstractTrainTestModule
@@ -9,7 +11,7 @@ from modules.mixer import MLPool, MLPMixer, FusionMixer
 
 import torch
 
-from typing import List
+from typing import List, Any, Optional
 from torch.nn import CrossEntropyLoss
 from torchmetrics import Accuracy
 import modules
@@ -246,9 +248,13 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
 
         # get predictions
         preds = torch.softmax(logits, dim=1).argmax(dim=1)
+        preds_image = torch.softmax(image_logits, dim=1).argmax(dim=1)
+        preds_audio = torch.softmax(audio_logits, dim=1).argmax(dim=1)
 
         return {
             'preds': preds,
+            'preds_image': preds_image,
+            'preds_audio': preds_audio,
             'labels': labels,
             'loss': loss
         }
@@ -262,6 +268,30 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         test_scores = dict(acc=Accuracy(task="multiclass", num_classes=10))
 
         return [train_scores, val_scores, test_scores]
+
+    def test_epoch_end(self, outputs, save_preds=False):
+        super().test_epoch_end(outputs, save_preds)
+        preds = torch.cat([x['preds'] for x in outputs])
+        preds_image = torch.cat([x['preds_image'] for x in outputs])
+        preds_audio = torch.cat([x['preds_audio'] for x in outputs])
+        labels = torch.cat([x['labels'] for x in outputs])
+
+        save_path = path.dirname(self.checkpoint_path)
+        torch.save(dict(preds=preds, preds_image=preds_image, preds_audio=preds_audio, labels=labels),
+                   save_path + '/test_preds.pt')
+
+    @classmethod
+    def load_from_checkpoint(
+            cls,
+            checkpoint_path,
+            map_location=None,
+            hparams_file: Optional = None,
+            strict: bool = True,
+            **kwargs: Any,
+    ):
+        model = super().load_from_checkpoint(checkpoint_path, map_location, hparams_file, strict, **kwargs)
+        cls.checkpoint_path = checkpoint_path
+        return model
 
 
 class AVMnistMixerMultiLossGated(AbstractTrainTestModule):
