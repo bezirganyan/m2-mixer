@@ -1,10 +1,15 @@
 program: run.py
 method: bayes
-name: Reducing
+name: AVMNIST_Mixer search
 metric:
   goal: minimize
   name: val_loss
 parameters:
+  optimizer:
+    parameters:
+      weight_decay:
+          min: 0.0
+          max: 0.00001
   model:
     parameters:
       modalities:
@@ -12,21 +17,30 @@ parameters:
           image:
             parameters:
               num_mixers:
-                values: [1, 2, 3, 4, 5, 6, 7, 8, 9]
-          text:
+                values: [4, 8, 16]
+              hidden_dim:
+                values: [ 128, 256]
+          audio:
             parameters:
               num_mixers:
-                values: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+                values: [4, 8, 16]
+              patch_size:
+                values: [16, 28, 56]
+              hidden_dim:
+                values:  [ 128, 256 ]
+
           multimodal:
             parameters:
               num_mixers:
-                values: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+                values: [2, 4, 8, 16]
+              hidden_dim:
+                values:  [ 128, 256]
 command:
   - ${env}
   - ${interpreter}
   - ${program}
   - "-c"
-  - "cfg/imdb_base.yml"
+  - "cfg/avmnist.yml"
   - "-n"
-  - "BaseTuning"
+  - "[HS:] AVMNIST_Mixer search"
   - ${args}
