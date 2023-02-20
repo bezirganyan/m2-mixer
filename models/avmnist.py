@@ -3,6 +3,7 @@ from os import path
 
 import wandb
 from omegaconf import DictConfig
+from softadapt import LossWeightedSoftAdapt, NormalizedSoftAdapt
 
 from modules.train_test_module import AbstractTrainTestModule
 from modules.fusion import BiModalGatedUnit
@@ -216,6 +217,15 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         self.audio_criterion = CrossEntropyLoss()
         self.fusion_criterion = CrossEntropyLoss()
 
+        self.use_softadapt = model_cfg.get('use_softadapt', False)
+        if self.use_softadapt:
+            self.image_criterion_history = list()
+            self.audio_criterion_history = list()
+            self.fusion_criterion_history = list()
+            self.loss_weights = torch.tensor([1.0 / 3, 1.0 / 3, 1.0 / 3], device=self.device)
+            self.softadapt = NormalizedSoftAdapt(beta=0.1, accuracy_order=5)
+            self.update_loss_weights_per_epoch = model_cfg.get('update_loss_weights_per_epoch', 10)
+
     def shared_step(self, batch):
         # Load data
 
@@ -245,12 +255,18 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         audio_logits = self.classifier_audio(audio_logits.mean(dim=1))
         logits = self.classifier_fusion(logits.mean(dim=1))
 
-
         # compute losses
         loss_image = self.image_criterion(image_logits, labels)
         loss_audio = self.audio_criterion(audio_logits, labels)
         loss_fusion = self.fusion_criterion(logits, labels)
-        loss = loss_image + loss_audio + loss_fusion
+
+        if self.use_softadapt:
+            loss = self.loss_weights[0] * loss_image + self.loss_weights[1] * loss_audio + self.loss_weights[
+                2] * loss_fusion
+
+
+        else:
+            loss = loss_image + loss_audio + loss_fusion
 
         # get predictions
         preds = torch.softmax(logits, dim=1).argmax(dim=1)
@@ -262,8 +278,31 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
             'preds_image': preds_image,
             'preds_audio': preds_audio,
             'labels': labels,
-            'loss': loss
+            'loss': loss,
+            'loss_image': loss_image,
+            'loss_audio': loss_audio,
+            'loss_fusion': loss_fusion
         }
+
+    def training_epoch_end(self, outputs) -> None:
+        super().training_epoch_end(outputs)
+        if self.use_softadapt:
+            self.image_criterion_history.append(torch.stack([x['loss_image'] for x in outputs]).mean().item())
+            self.audio_criterion_history.append(torch.stack([x['loss_audio'] for x in outputs]).mean().item())
+            self.fusion_criterion_history.append(torch.stack([x['loss_fusion'] for x in outputs]).mean().item())
+            wandb.log({'loss_weight_image': self.loss_weights[0].item()})
+            wandb.log({'loss_weight_audio': self.loss_weights[1].item()})
+            wandb.log({'loss_weight_fusion': self.loss_weights[2].item()})
+            if self.current_epoch != 0 and (self.current_epoch % self.update_loss_weights_per_epoch == 0):
+                print('[!] Updating loss weights')
+                self.loss_weights = self.softadapt.get_component_weights(torch.tensor(self.image_criterion_history),
+                                                                         torch.tensor(self.audio_criterion_history),
+                                                                         torch.tensor(self.fusion_criterion_history),
+                                                                         verbose=True)
+                print(f'[!] loss weights: {self.loss_weights}')
+                self.image_criterion_history = list()
+                self.audio_criterion_history = list()
+                self.fusion_criterion_history = list()
 
     def setup_criterion(self) -> torch.nn.Module:
         return None
