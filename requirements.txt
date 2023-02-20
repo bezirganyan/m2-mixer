@@ -13,3 +13,7 @@ torchmetrics==0.11.0
 tqdm==4.64.1
 wandb~=0.13.7
 torchtext~=0.14.1
+pytest~=7.2.1
+torchvision~=0.14.1
+scikit-learn~=1.2.0
+ipython~=8.8.0

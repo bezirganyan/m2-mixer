@@ -3,6 +3,7 @@ import sys
 from .mixer import *
 from .gmpl import *
 from .fusion import *
+from .dynamixer import *
 
 
 def get_block_by_name(**kwargs):

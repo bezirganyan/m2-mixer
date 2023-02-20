@@ -122,7 +122,7 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
                 self.test_scores[metric](results['preds'].to(self.device), results['labels'].to(self.device))
         return results
 
-    def test_epoch_end(self, outputs):
+    def test_epoch_end(self, outputs, save_preds=False):
         if self.test_scores is not None:
             for metric in self.test_scores:
                 test_score = self.test_scores[metric].compute()

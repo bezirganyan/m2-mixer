@@ -201,8 +201,9 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         dropout = model_cfg.get('dropout', 0.0)
         self.image_mixer = modules.get_block_by_name(**image_config, dropout=dropout)
         self.audio_mixer = modules.get_block_by_name(**audio_config, dropout=dropout)
-        # num_patches = self.image_mixer.num_patch + self.audio_mixer.num_patch
-        num_patches = self.image_mixer.num_patch
+        self.fusion_function = modules.get_fusion_by_name(**model_cfg.modalities.multimodal)
+        num_patches = self.fusion_function.get_output_shape(self.image_mixer.num_patch, self.audio_mixer.num_patch,
+                                                            dim=1)
         self.fusion_mixer = modules.get_block_by_name(**multimodal_config, num_patches=num_patches, dropout=dropout)
         self.classifier_image = torch.nn.Linear(model_cfg.modalities.image.hidden_dim,
                                                 model_cfg.modalities.classification.num_classes)
@@ -211,7 +212,6 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         self.classifier_fusion = torch.nn.Linear(model_cfg.modalities.image.hidden_dim,
                                                  model_cfg.modalities.classification.num_classes)
 
-        self.fusion_function = modules.get_fusion_by_name(**model_cfg.modalities.multimodal)
         self.image_criterion = CrossEntropyLoss()
         self.audio_criterion = CrossEntropyLoss()
         self.fusion_criterion = CrossEntropyLoss()
