@@ -8,7 +8,7 @@ train:
     eps: 1e-8
     weight_decay: 0.0
   seed: 42
-  monitor: val_loss
+  monitor: val_loss_fusion
   monitor_mode: min
 
 dataset:
@@ -21,6 +21,8 @@ dataset:
 model:
   type: AVMnistMixerMultiLoss
   dropout: 0.5
+  use_softadapt: true
+  update_loss_weights_per_epoch: 4
   modalities:
     classification:
       num_classes: 10
