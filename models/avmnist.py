@@ -223,8 +223,8 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
             self.audio_criterion_history = list()
             self.fusion_criterion_history = list()
             self.loss_weights = torch.tensor([1.0 / 3, 1.0 / 3, 1.0 / 3], device=self.device)
-            self.softadapt = NormalizedSoftAdapt(beta=0.1, accuracy_order=5)
-            self.update_loss_weights_per_epoch = model_cfg.get('update_loss_weights_per_epoch', 10)
+            self.update_loss_weights_per_epoch = model_cfg.get('update_loss_weights_per_epoch', 6)
+            self.softadapt = LossWeightedSoftAdapt(beta=0.1, accuracy_order=self.update_loss_weights_per_epoch-1)
 
     def shared_step(self, batch):
         # Load data
@@ -281,11 +281,21 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
             'loss': loss,
             'loss_image': loss_image,
             'loss_audio': loss_audio,
-            'loss_fusion': loss_fusion
+            'loss_fusion': loss_fusion,
+            'image_logits': image_logits,
+            'audio_logits': audio_logits,
+            'logits': logits
         }
 
     def training_epoch_end(self, outputs) -> None:
         super().training_epoch_end(outputs)
+        wandb.log({'train_loss_image': torch.stack([x['loss_image'] for x in outputs]).mean().item()})
+        wandb.log({'train_loss_audio': torch.stack([x['loss_audio'] for x in outputs]).mean().item()})
+        wandb.log({'train_loss_fusion': torch.stack([x['loss_fusion'] for x in outputs]).mean().item()})
+        self.log('train_loss_fusion', torch.stack([x['loss_fusion'] for x in outputs]).mean().item())
+
+    def validation_epoch_end(self, outputs) -> None:
+        super().validation_epoch_end(outputs)
         if self.use_softadapt:
             self.image_criterion_history.append(torch.stack([x['loss_image'] for x in outputs]).mean().item())
             self.audio_criterion_history.append(torch.stack([x['loss_audio'] for x in outputs]).mean().item())
@@ -293,6 +303,11 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
             wandb.log({'loss_weight_image': self.loss_weights[0].item()})
             wandb.log({'loss_weight_audio': self.loss_weights[1].item()})
             wandb.log({'loss_weight_fusion': self.loss_weights[2].item()})
+            wandb.log({'val_loss_image': self.image_criterion_history[-1]})
+            wandb.log({'val_loss_audio': self.audio_criterion_history[-1]})
+            wandb.log({'val_loss_fusion': self.fusion_criterion_history[-1]})
+            self.log('val_loss_fusion', self.fusion_criterion_history[-1])
+
             if self.current_epoch != 0 and (self.current_epoch % self.update_loss_weights_per_epoch == 0):
                 print('[!] Updating loss weights')
                 self.loss_weights = self.softadapt.get_component_weights(torch.tensor(self.image_criterion_history),
@@ -303,6 +318,7 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
                 self.image_criterion_history = list()
                 self.audio_criterion_history = list()
                 self.fusion_criterion_history = list()
+
 
     def setup_criterion(self) -> torch.nn.Module:
         return None
@@ -320,9 +336,13 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         preds_image = torch.cat([x['preds_image'] for x in outputs])
         preds_audio = torch.cat([x['preds_audio'] for x in outputs])
         labels = torch.cat([x['labels'] for x in outputs])
+        image_logits = torch.cat([x['image_logits'] for x in outputs])
+        audio_logits = torch.cat([x['audio_logits'] for x in outputs])
+        logits = torch.cat([x['logits'] for x in outputs])
 
         save_path = path.dirname(self.checkpoint_path)
-        torch.save(dict(preds=preds, preds_image=preds_image, preds_audio=preds_audio, labels=labels),
+        torch.save(dict(preds=preds, preds_image=preds_image, preds_audio=preds_audio, labels=labels,
+                        image_logits=image_logits, audio_logits=audio_logits, logits=logits),
                    save_path + '/test_preds.pt')
 
     @classmethod
