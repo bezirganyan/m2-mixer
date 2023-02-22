@@ -156,8 +156,9 @@ class AVMnist(Dataset):
 
 class AVMnistDataModule(pl.LightningDataModule):
 
-    def __init__(self, data_dir, batch_size, num_workers, **kwargs):
+    def __init__(self, data_dir, batch_size, num_workers, p_muting=0.0, **kwargs):
         super().__init__(**kwargs)
+        self.p_muting = p_muting
         self.data_dir = data_dir
         self.batch_size = batch_size
         self.num_workers = num_workers
@@ -165,7 +166,7 @@ class AVMnistDataModule(pl.LightningDataModule):
 
 
     def setup(self, stage: str = None):
-        transform = T.Compose([ToTensor()])
+        transform = T.Compose([ToTensor(), RandomModalityMuting(p_muting=self.p_muting)])
 
         train_dataset = AVMnist(root_dir=self.data_dir, transform=transform, stage='train')
         val_dataset = AVMnist(root_dir=self.data_dir, transform=transform, stage='train')
