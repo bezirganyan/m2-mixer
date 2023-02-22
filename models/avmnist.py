@@ -6,7 +6,7 @@ from omegaconf import DictConfig
 from softadapt import LossWeightedSoftAdapt, NormalizedSoftAdapt
 
 from modules.train_test_module import AbstractTrainTestModule
-from modules.fusion import BiModalGatedUnit
+from modules.fusion import BiModalGatedUnit, MultiModalGatedUnit
 from modules.gmpl import VisiongMLP, FusiongMLP
 from modules.mixer import MLPool, MLPMixer, FusionMixer
 
@@ -224,7 +224,7 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
             self.fusion_criterion_history = list()
             self.loss_weights = torch.tensor([1.0 / 3, 1.0 / 3, 1.0 / 3], device=self.device)
             self.update_loss_weights_per_epoch = model_cfg.get('update_loss_weights_per_epoch', 6)
-            self.softadapt = LossWeightedSoftAdapt(beta=0.1, accuracy_order=self.update_loss_weights_per_epoch-1)
+            self.softadapt = LossWeightedSoftAdapt(beta=-0.1, accuracy_order=self.update_loss_weights_per_epoch - 1)
 
     def shared_step(self, batch):
         # Load data
@@ -319,7 +319,6 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
                 self.audio_criterion_history = list()
                 self.fusion_criterion_history = list()
 
-
     def setup_criterion(self) -> torch.nn.Module:
         return None
 
@@ -357,6 +356,87 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         model = super().load_from_checkpoint(checkpoint_path, map_location, hparams_file, strict, **kwargs)
         cls.checkpoint_path = checkpoint_path
         return model
+
+
+class AVMNISTMixedFusion(AVMnistMixerMultiLoss):
+    def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
+        super().__init__(model_cfg, optimizer_cfg, **kwargs)
+        self.final_fusion = MultiModalGatedUnit(n_modalities=3, in_shape=self.audio_mixer.hidden_dim)
+
+    def shared_step(self, batch):
+        # Load data
+        image = batch['image']
+        audio = batch['audio']
+        labels = batch['label']
+
+        if self.mute == 'image':
+            image = torch.zeros_like(image)
+        elif self.mute == 'audio':
+            audio = torch.zeros_like(audio)
+
+        # get modality encodings from feature extractors
+        image_logits = self.image_mixer(image)
+        audio_logits = self.audio_mixer(audio)
+
+        # fuse modalities
+        fused_moalities = self.fusion_function(image_logits, audio_logits)
+        logits = self.fusion_mixer(fused_moalities)
+
+        logits = logits.reshape(logits.shape[0], -1, logits.shape[-1])
+        audio_logits = audio_logits.reshape(audio_logits.shape[0], -1, audio_logits.shape[-1])
+        image_logits = image_logits.reshape(image_logits.shape[0], -1, image_logits.shape[-1])
+
+        # get logits for each modality
+        image_logits = self.classifier_image(image_logits.mean(dim=1))
+        audio_logits = self.classifier_audio(audio_logits.mean(dim=1))
+        logits = self.classifier_fusion(logits.mean(dim=1))
+
+        fused_logits = self.final_fusion(image_logits, audio_logits, logits)
+
+        # compute losses
+        loss_image = self.image_criterion(image_logits, labels)
+        loss_audio = self.audio_criterion(audio_logits, labels)
+        loss_fusion = self.fusion_criterion(logits, labels)
+        loss_final_fusion = self.final_fusion_criterion(fused_logits, labels)
+        loss = loss_image + loss_audio + loss_fusion + loss_final_fusion
+
+        # get predictions
+        preds_fusion = torch.softmax(logits, dim=1).argmax(dim=1)
+        preds_image = torch.softmax(image_logits, dim=1).argmax(dim=1)
+        preds_audio = torch.softmax(audio_logits, dim=1).argmax(dim=1)
+        preds = torch.softmax(fused_logits, dim=1).argmax(dim=1)
+
+        return {
+            'preds': preds,
+            'preds_image': preds_image,
+            'preds_audio': preds_audio,
+            'preds_fusion': preds_fusion,
+            'labels': labels,
+            'loss': loss,
+            'loss_image': loss_image,
+            'loss_audio': loss_audio,
+            'loss_fusion': loss_fusion,
+            'loss_final_fusion': loss_final_fusion,
+            'image_logits': image_logits,
+            'audio_logits': audio_logits,
+            'logits': logits,
+            'fused_logits': fused_logits
+        }
+
+    def training_epoch_end(self, outputs) -> None:
+        super().training_epoch_end(outputs)
+        wandb.log({'train_loss_image': torch.stack([x['loss_image'] for x in outputs]).mean().item()})
+        wandb.log({'train_loss_audio': torch.stack([x['loss_audio'] for x in outputs]).mean().item()})
+        wandb.log({'train_loss_fusion': torch.stack([x['loss_fusion'] for x in outputs]).mean().item()})
+        wandb.log({'train_loss_final_fusion': torch.stack([x['loss_final_fusion'] for x in outputs]).mean().item()})
+        self.log('train_loss_final_fusion', torch.stack([x['loss_final_fusion'] for x in outputs]).mean().item())
+
+    def validation_epoch_end(self, outputs) -> None:
+        super().validation_epoch_end(outputs)
+        wandb.log({'val_loss_image': self.image_criterion_history[-1]})
+        wandb.log({'val_loss_audio': self.audio_criterion_history[-1]})
+        wandb.log({'val_loss_fusion': self.fusion_criterion_history[-1]})
+        self.log('val_loss_fusion', self.fusion_criterion_history[-1])
 
 
 class AVMnistMixerMultiLossGated(AbstractTrainTestModule):
