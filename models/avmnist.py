@@ -195,6 +195,7 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
     def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
         super(AVMnistMixerMultiLoss, self).__init__(optimizer_cfg, log_confusion_matrix=True, **kwargs)
         self.optimizer_cfg = optimizer_cfg
+        self.checkpoint_path = None
         self.mute = model_cfg.get('mute', None)
         image_config = model_cfg.modalities.image
         audio_config = model_cfg.modalities.audio
@@ -339,6 +340,8 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         audio_logits = torch.cat([x['audio_logits'] for x in outputs])
         logits = torch.cat([x['logits'] for x in outputs])
 
+        if self.checkpoint_path is None:
+            self.checkpoint_path = self.logger.save_dir
         save_path = path.dirname(self.checkpoint_path)
         torch.save(dict(preds=preds, preds_image=preds_image, preds_audio=preds_audio, labels=labels,
                         image_logits=image_logits, audio_logits=audio_logits, logits=logits),
