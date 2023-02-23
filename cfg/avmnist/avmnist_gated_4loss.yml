@@ -1,7 +1,7 @@
 train:
   tensorboard_path: ./logs/
   log_interval_steps: 10
-  epochs: 300
+  epochs: 30
   optimizer:
     lr: 5e-4
     betas: [0.9, 0.999]
@@ -12,19 +12,22 @@ train:
   monitor_mode: min
 
 dataset:
-  type: avmnist
+  type: AVMnistDataModule
   params:
     data_dir: ../data/avmnist_orig/avmnist
     batch_size: 32
     num_workers: -1
+    p_muting: 0.0
 
 model:
-  type: avmnist_mixer_gated_4loss
+  type: AVMnistMixerMultiLoss
   dropout: 0.5
+  mute: image
   modalities:
     classification:
       num_classes: 10
     image:
+      block_type: MLPMixer
       in_channels: 1
       hidden_dim: 128
       patch_size: 4
@@ -33,6 +36,7 @@ model:
       channel_dim: 3072
       num_mixers: 4
     audio:
+      block_type: MLPMixer
       in_channels: 1
       hidden_dim: 128
       patch_size: 16
@@ -41,6 +45,11 @@ model:
       channel_dim: 3072
       num_mixers: 4
     multimodal:
+      mod1_in: 128
+      mod2_in: 128
+      out_size: 128
+      block_type: FusionMixer
+      fusion_function: BiModalGatedUnit
       hidden_dim: 128
       token_dim: 32
       channel_dim: 3072
