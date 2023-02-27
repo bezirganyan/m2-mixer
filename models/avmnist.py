@@ -341,11 +341,12 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         logits = torch.cat([x['logits'] for x in outputs])
 
         if self.checkpoint_path is None:
-            self.checkpoint_path = self.logger.save_dir
+            self.checkpoint_path = f'{self.logger.save_dir}/{self.logger.name}/version_{self.logger.version}/checkpoints/'
         save_path = path.dirname(self.checkpoint_path)
         torch.save(dict(preds=preds, preds_image=preds_image, preds_audio=preds_audio, labels=labels,
                         image_logits=image_logits, audio_logits=audio_logits, logits=logits),
                    save_path + '/test_preds.pt')
+        print(f'[!] Saved test predictions to {save_path}/test_preds.pt')
 
     @classmethod
     def load_from_checkpoint(
