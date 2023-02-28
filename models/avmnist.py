@@ -4,6 +4,7 @@ from os import path
 import wandb
 from omegaconf import DictConfig
 from softadapt import LossWeightedSoftAdapt, NormalizedSoftAdapt
+from torch import nn
 
 from modules.train_test_module import AbstractTrainTestModule
 from modules.fusion import BiModalGatedUnit, MultiModalGatedUnit
@@ -360,6 +361,12 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         model = super().load_from_checkpoint(checkpoint_path, map_location, hparams_file, strict, **kwargs)
         cls.checkpoint_path = checkpoint_path
         return model
+
+    def init_weights(self):
+        for param in self.parameters():
+            if param.dim() > 1:
+                nn.init.xavier_uniform_(param)
+
 
 
 class AVMNISTMixedFusion(AVMnistMixerMultiLoss):
