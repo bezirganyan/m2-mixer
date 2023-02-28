@@ -47,6 +47,64 @@ class MixerBlock(nn.Module):
         return x
 
 
+class MMixerBlock(nn.Module):
+    def __init__(self, hidden_dim, num_patch, num_modality, modality_dim, token_dim, channel_dim, dropout=0.):
+        super().__init__()
+
+        self.token_mix = nn.Sequential(
+            nn.LayerNorm(hidden_dim),
+            Rearrange('b m n d -> b m d n'),
+            FeedForward(num_patch, token_dim, dropout),
+            Rearrange('b m d n -> b m n d')
+        )
+
+        self.modality_mix = nn.Sequential(
+            nn.LayerNorm(hidden_dim),
+            Rearrange('b m n d -> b n d m'),
+            FeedForward(num_modality, modality_dim, dropout),
+            Rearrange('b n d m -> b m n d'),
+        )
+
+        self.channel_mix = nn.Sequential(
+            nn.LayerNorm(hidden_dim),
+            FeedForward(hidden_dim, channel_dim, dropout),
+        )
+
+
+    def forward(self, x):
+        x = x + self.token_mix(x)
+
+        x = x + self.modality_mix(x)
+
+        x = x + self.channel_mix(x)
+
+        return x
+
+
+class MultimodalFusionMixer(nn.Module):
+    def __init__(self, hidden_dim, num_patches, num_mixers, token_dim, channel_dim, num_modality, modality_dim,
+                 dropout=0., **kwargs):
+        super().__init__()
+
+        self.num_patch = num_patches
+        self.mixer_blocks = nn.ModuleList([])
+
+        for _ in range(num_mixers):
+            self.mixer_blocks.append(MMixerBlock(hidden_dim, self.num_patch, num_modality, modality_dim,
+                                                 token_dim, channel_dim, dropout=dropout))
+
+        self.layer_norm = nn.LayerNorm(hidden_dim)
+
+    def forward(self, x):
+        # x = self.to_patch_embedding(x)
+
+        for mixer_block in self.mixer_blocks:
+            x = mixer_block(x)
+
+        x = self.layer_norm(x)
+        return x
+
+
 class FusionMixer(nn.Module):
     def __init__(self, hidden_dim, num_patches, num_mixers, token_dim, channel_dim,
                  dropout=0., **kwargs):
@@ -76,7 +134,7 @@ class MLPMixer(nn.Module):
         super().__init__()
 
         assert (image_size[0] % patch_size == 0) and (
-                    image_size[1] % patch_size == 0), 'Image dimensions must be divisible by the patch size.'
+                image_size[1] % patch_size == 0), 'Image dimensions must be divisible by the patch size.'
         self.num_patch = (image_size[0] // patch_size) * (image_size[1] // patch_size)
         self.to_patch_embedding = nn.Sequential(
             nn.Conv2d(in_channels, hidden_dim, patch_size, patch_size),
@@ -106,7 +164,7 @@ class MLPool(nn.Module):
         super().__init__()
 
         assert (image_size[0] % patch_size == 0) and (
-                    image_size[1] % patch_size == 0), 'Image dimensions must be divisible by the patch size.'
+                image_size[1] % patch_size == 0), 'Image dimensions must be divisible by the patch size.'
         self.num_patch = (image_size[0] // patch_size) * (image_size[1] // patch_size)
         self.to_patch_embedding = nn.Sequential(
             nn.Conv2d(in_channels, hidden_dims[0], patch_size, patch_size),

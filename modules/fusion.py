@@ -177,7 +177,7 @@ class ConcatDynaFusion:
             if not isinstance(args[0], int):
                 raise ValueError("The dim argument is only used if the first argument is an int.")
             if dim == self.dim:
-                return (int(math.sqrt(args[0])) * 2)**2
+                return (int(math.sqrt(args[0])) * 2) ** 2
             else:
                 return args[0]
         shape = list(args[0])
@@ -185,6 +185,7 @@ class ConcatDynaFusion:
             shape[1] += arg[1]
             shape[2] += arg[2]
         return tuple(shape)
+
 
 class MaxFusion:
     def __init__(self, **kwargs):
@@ -218,6 +219,40 @@ class SumFusion:
         if args[0] != args[1]:
             raise ValueError("Input shapes must be equal")
         return args[0]
+
+
+class ExtraConcatFusion:
+    def __init__(self, dim=1, **kwargs):
+        self.dim = dim
+
+    def __call__(self, *args):
+        return torch.cat([a.unsqueeze(self.dim) for a in args], dim=self.dim)
+
+    def get_output_shape(self, *args, dim=None, num_modality=2):
+        """
+        Returns the output shape of the layer given the input shape.
+        Parameters
+        ----------
+        *args : tuple, list, torch.Size, int
+            The input shape of the layer. If a tuple, list, or torch.Size, then the full shape is expected. If an int,
+            then the dimension parameter is also expected, and the result will be the output shape of that dimension.
+        dim : int, optional
+            The dimension of the input shape. Only used if the first argument is an int. Defaults to None. If not None,
+            then the args argument is expected to be an int and match the input shape of at the given dimension.
+
+        Returns
+        -------
+        tuple, int
+
+        """
+        if dim is not None:
+            if not isinstance(args[0], int):
+                raise ValueError("The dim argument is only used if the first argument is an int.")
+            if dim == self.dim:
+                return args[0]
+        shape = list(args[0])
+        shape.insert(self.dim, num_modality)
+        return tuple(shape)
 
 
 class MeanFusion:
