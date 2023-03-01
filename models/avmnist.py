@@ -218,8 +218,6 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         self.audio_criterion = CrossEntropyLoss()
         self.fusion_criterion = CrossEntropyLoss()
 
-        self.init_weights()
-
         self.use_softadapt = model_cfg.get('use_softadapt', False)
         if self.use_softadapt:
             self.image_criterion_history = list()
@@ -249,7 +247,7 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         fused_moalities = self.fusion_function(image_logits, audio_logits)
         logits = self.fusion_mixer(fused_moalities)
 
-        logits = logits.reshape(logits.shape[0], -1, logits.shape[-1])
+        # logits = logits.reshape(logits.shape[0], -1, logits.shape[-1])
         audio_logits = audio_logits.reshape(audio_logits.shape[0], -1, audio_logits.shape[-1])
         image_logits = image_logits.reshape(image_logits.shape[0], -1, image_logits.shape[-1])
 
