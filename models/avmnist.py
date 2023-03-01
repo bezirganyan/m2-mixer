@@ -212,12 +212,13 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
                                                 model_cfg.modalities.classification.num_classes)
         self.classifier_audio = torch.nn.Linear(model_cfg.modalities.audio.hidden_dim,
                                                 model_cfg.modalities.classification.num_classes)
-        self.classifier_fusion = torch.nn.Linear(model_cfg.modalities.image.hidden_dim,
-                                                 model_cfg.modalities.classification.num_classes)
+        self.classifier_fusion = modules.get_classifier_by_name(**model_cfg.modalities.classification)
 
         self.image_criterion = CrossEntropyLoss()
         self.audio_criterion = CrossEntropyLoss()
         self.fusion_criterion = CrossEntropyLoss()
+
+        self.init_weights()
 
         self.use_softadapt = model_cfg.get('use_softadapt', False)
         if self.use_softadapt:
@@ -255,7 +256,7 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         # get logits for each modality
         image_logits = self.classifier_image(image_logits.mean(dim=1))
         audio_logits = self.classifier_audio(audio_logits.mean(dim=1))
-        logits = self.classifier_fusion(logits.mean(dim=1))
+        logits = self.classifier_fusion(logits)
 
         # compute losses
         loss_image = self.image_criterion(image_logits, labels)
@@ -359,7 +360,7 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
             **kwargs: Any,
     ):
         model = super().load_from_checkpoint(checkpoint_path, map_location, hparams_file, strict, **kwargs)
-        cls.checkpoint_path = checkpoint_path
+        model.checkpoint_path = checkpoint_path
         return model
 
     def init_weights(self):
@@ -433,21 +434,6 @@ class AVMNISTMixedFusion(AVMnistMixerMultiLoss):
             'logits': logits,
             'fused_logits': fused_logits
         }
-
-    def training_epoch_end(self, outputs) -> None:
-        super().training_epoch_end(outputs)
-        wandb.log({'train_loss_image': torch.stack([x['loss_image'] for x in outputs]).mean().item()})
-        wandb.log({'train_loss_audio': torch.stack([x['loss_audio'] for x in outputs]).mean().item()})
-        wandb.log({'train_loss_fusion': torch.stack([x['loss_fusion'] for x in outputs]).mean().item()})
-        wandb.log({'train_loss_final_fusion': torch.stack([x['loss_final_fusion'] for x in outputs]).mean().item()})
-        self.log('train_loss_final_fusion', torch.stack([x['loss_final_fusion'] for x in outputs]).mean().item())
-
-    def validation_epoch_end(self, outputs) -> None:
-        super().validation_epoch_end(outputs)
-        wandb.log({'val_loss_image': self.image_criterion_history[-1]})
-        wandb.log({'val_loss_audio': self.audio_criterion_history[-1]})
-        wandb.log({'val_loss_fusion': self.fusion_criterion_history[-1]})
-        self.log('val_loss_fusion', self.fusion_criterion_history[-1])
 
 
 class AVMnistMixerMultiLossGated(AbstractTrainTestModule):
