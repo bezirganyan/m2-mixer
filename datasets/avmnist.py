@@ -166,7 +166,8 @@ class AVMnistDataModule(pl.LightningDataModule):
 
 
     def setup(self, stage: str = None):
-        transform = T.Compose([ToTensor(), RandomModalityMuting(p_muting=self.p_muting)])
+        # transform = T.Compose([ToTensor(), RandomModalityMuting(p_muting=self.p_muting)])
+        transform = T.Compose([ToTensor()])
 
         train_dataset = AVMnist(root_dir=self.data_dir, transform=transform, stage='train')
         val_dataset = AVMnist(root_dir=self.data_dir, transform=transform, stage='train')
