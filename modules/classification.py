@@ -47,6 +47,23 @@ class MultilayerClassifier(nn.Module):
         return x
 
 
+class UncompressedMultilayerClassifier(nn.Module):
+    def __init__(self, input_shape: tuple, hidden_dims: list, num_classes: int, **kwargs):
+        super(UncompressedMultilayerClassifier, self).__init__()
+        self.classifer = nn.ModuleList([])
+        self.classifer.append(nn.Linear(np.prod(input_shape), hidden_dims[0]))
+        for i in range(len(hidden_dims) - 1):
+            self.classifer.append(nn.Linear(hidden_dims[i], hidden_dims[i + 1]))
+            self.classifer.append(nn.ReLU())
+        self.classifer.append(nn.Linear(hidden_dims[-1], num_classes))
+
+    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+        x = inputs.view(inputs.shape[0], -1)
+        for layer in self.classifer:
+            x = layer(x)
+        return x
+
+
 class StandardClassifier(nn.Module):
     def __init__(self, input_shape: tuple, num_classes: int, **kwargs):
         super(StandardClassifier, self).__init__()
