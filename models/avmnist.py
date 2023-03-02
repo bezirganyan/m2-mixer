@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from os import path
 
+import numpy as np
 import wandb
 from omegaconf import DictConfig
 from softadapt import LossWeightedSoftAdapt, NormalizedSoftAdapt
@@ -195,9 +196,13 @@ class AVMnistMixerLF(AbstractAVMnistMixer):
 class AVMnistMixerMultiLoss(AbstractTrainTestModule):
     def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
         super(AVMnistMixerMultiLoss, self).__init__(optimizer_cfg, log_confusion_matrix=True, **kwargs)
+        self.modalities_freezed = False
         self.optimizer_cfg = optimizer_cfg
         self.checkpoint_path = None
         self.mute = model_cfg.get('mute', None)
+        self.freeze_modalities_on_epoch = model_cfg.get('freeze_modalities_on_epoch', None)
+        self.random_modality_muting_on_freeze = model_cfg.get('random_modality_muting_on_freeze', False)
+        self.muting_probs = model_cfg.get('muting_probs', None)
         image_config = model_cfg.modalities.image
         audio_config = model_cfg.modalities.audio
         multimodal_config = model_cfg.modalities.multimodal
@@ -234,10 +239,24 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         audio = batch['audio']
         labels = batch['label']
 
-        if self.mute == 'image':
-            image = torch.zeros_like(image)
-        elif self.mute == 'audio':
-            audio = torch.zeros_like(audio)
+        if self.freeze_modalities_on_epoch is not None and (self.current_epoch == self.freeze_modalities_on_epoch) \
+                and not self.modalities_freezed:
+            print('Freezing modalities')
+            for param in self.image_mixer.parameters():
+                param.requires_grad = False
+            for param in self.audio_mixer.parameters():
+                param.requires_grad = False
+            self.modalities_freezed = True
+            if self.random_modality_muting_on_freeze:
+                self.mute = np.random.choice(['image', 'audio', 'multimodal'], p=[self.muting_probs['image'],
+                                                                                  self.muting_probs['audio'],
+                                                                                  self.muting_probs['multimodal']])
+
+        if self.mute != 'multimodal':
+            if self.mute == 'image':
+                image = torch.zeros_like(image)
+            elif self.mute == 'audio':
+                audio = torch.zeros_like(audio)
 
         # get modality encodings from feature extractors
         image_logits = self.image_mixer(image)

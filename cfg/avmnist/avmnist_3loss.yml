@@ -22,12 +22,18 @@ dataset:
 model:
   type: AVMnistMixerMultiLoss
   dropout: 0.5
+  freeze_modalities_on_epoch: 1
+  random_modality_muting_on_freeze: True
+  muting_probs:
+    image: 0.1
+    audio: 0.2
+    multimodal: 0.7
   modalities:
     classification:
       num_classes: 10
-      classifier: MultilayerClassifier
+      classifier: StandardClassifier
       input_shape: [16, 49, 128]
-      hidden_dims: [1024, 512, 256]
+      hidden_dims: [1024, 512, 256, 32]
     image:
       block_type: MLPMixer
       in_channels: 1
@@ -47,8 +53,8 @@ model:
       channel_dim: 3072
       num_mixers: 4
     multimodal:
-      block_type: MultimodalFusionMixer
-      fusion_function: ExtraConcatFusion
+      block_type: FusionMixer
+      fusion_function: ConcatFusion
       hidden_dim: 128
       token_dim: 32
       channel_dim: 3072
