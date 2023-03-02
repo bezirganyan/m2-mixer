@@ -241,16 +241,19 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
 
         if self.freeze_modalities_on_epoch is not None and (self.current_epoch == self.freeze_modalities_on_epoch) \
                 and not self.modalities_freezed:
+            print(self.modalities_freezed)
+            print(self.freeze_modalities_on_epoch)
             print('Freezing modalities')
             for param in self.image_mixer.parameters():
                 param.requires_grad = False
             for param in self.audio_mixer.parameters():
                 param.requires_grad = False
             self.modalities_freezed = True
-            if self.random_modality_muting_on_freeze:
-                self.mute = np.random.choice(['image', 'audio', 'multimodal'], p=[self.muting_probs['image'],
-                                                                                  self.muting_probs['audio'],
-                                                                                  self.muting_probs['multimodal']])
+
+        if self.random_modality_muting_on_freeze and (self.current_epoch >= self.freeze_modalities_on_epoch):
+            self.mute = np.random.choice(['image', 'audio', 'multimodal'], p=[self.muting_probs['image'],
+                                                                              self.muting_probs['audio'],
+                                                                              self.muting_probs['multimodal']])
 
         if self.mute != 'multimodal':
             if self.mute == 'image':
