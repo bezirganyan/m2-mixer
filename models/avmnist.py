@@ -232,34 +232,37 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
             self.update_loss_weights_per_epoch = model_cfg.get('update_loss_weights_per_epoch', 6)
             self.softadapt = LossWeightedSoftAdapt(beta=-0.1, accuracy_order=self.update_loss_weights_per_epoch - 1)
 
-    def shared_step(self, batch):
+    def shared_step(self, batch, **kwargs):
         # Load data
 
         image = batch['image']
         audio = batch['audio']
         labels = batch['label']
 
-        if self.freeze_modalities_on_epoch is not None and (self.current_epoch == self.freeze_modalities_on_epoch) \
-                and not self.modalities_freezed:
-            print(self.modalities_freezed)
-            print(self.freeze_modalities_on_epoch)
-            print('Freezing modalities')
-            for param in self.image_mixer.parameters():
-                param.requires_grad = False
-            for param in self.audio_mixer.parameters():
-                param.requires_grad = False
-            self.modalities_freezed = True
+        if kwargs.get('mode', None) == 'train':
+            if self.freeze_modalities_on_epoch is not None and (self.current_epoch == self.freeze_modalities_on_epoch) \
+                    and not self.modalities_freezed:
+                print('Freezing modalities')
+                for param in self.image_mixer.parameters():
+                    param.requires_grad = False
+                for param in self.audio_mixer.parameters():
+                    param.requires_grad = False
+                for param in self.classifier_image.parameters():
+                    param.requires_grad = False
+                for param in self.classifier_audio.parameters():
+                    param.requires_grad = False
+                self.modalities_freezed = True
 
-        if self.random_modality_muting_on_freeze and (self.current_epoch >= self.freeze_modalities_on_epoch):
-            self.mute = np.random.choice(['image', 'audio', 'multimodal'], p=[self.muting_probs['image'],
-                                                                              self.muting_probs['audio'],
-                                                                              self.muting_probs['multimodal']])
+            if self.random_modality_muting_on_freeze and (self.current_epoch >= self.freeze_modalities_on_epoch):
+                self.mute = np.random.choice(['image', 'audio', 'multimodal'], p=[self.muting_probs['image'],
+                                                                                  self.muting_probs['audio'],
+                                                                                  self.muting_probs['multimodal']])
 
-        if self.mute != 'multimodal':
-            if self.mute == 'image':
-                image = torch.zeros_like(image)
-            elif self.mute == 'audio':
-                audio = torch.zeros_like(audio)
+            if self.mute != 'multimodal':
+                if self.mute == 'image':
+                    image = torch.zeros_like(image)
+                elif self.mute == 'audio':
+                    audio = torch.zeros_like(audio)
 
         # get modality encodings from feature extractors
         image_logits = self.image_mixer(image)
@@ -286,10 +289,10 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         if self.use_softadapt:
             loss = self.loss_weights[0] * loss_image + self.loss_weights[1] * loss_audio + self.loss_weights[
                 2] * loss_fusion
-
-
         else:
             loss = loss_image + loss_audio + loss_fusion
+        if self.modalities_freezed and kwargs.get('mode', None) == 'train':
+            loss = loss_fusion
 
         # get predictions
         preds = torch.softmax(logits, dim=1).argmax(dim=1)
@@ -387,7 +390,6 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         for param in self.parameters():
             if param.dim() > 1:
                 nn.init.xavier_uniform_(param)
-
 
 
 class AVMNISTMixedFusion(AVMnistMixerMultiLoss):

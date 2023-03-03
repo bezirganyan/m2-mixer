@@ -21,13 +21,13 @@ dataset:
 
 model:
   type: AVMnistMixerMultiLoss
-  dropout: 0.5
-  freeze_modalities_on_epoch: 1
+  dropout: 0.
+  freeze_modalities_on_epoch: 0
   random_modality_muting_on_freeze: True
   muting_probs:
-    image: 0.1
-    audio: 0.2
-    multimodal: 0.7
+    image: 0.25
+    audio: 0.25
+    multimodal: 0.5
   modalities:
     classification:
       num_classes: 10

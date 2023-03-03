@@ -68,7 +68,8 @@ if __name__ == '__main__':
         gpus=-1,
         log_every_n_steps=train_cfg.log_interval_steps,
         logger=pl.loggers.TensorBoardLogger(train_cfg.tensorboard_path, args.name),
-        max_epochs=train_cfg.epochs
+        max_epochs=train_cfg.epochs,
+        num_sanity_val_steps=-1,
     )
     wandb.config.update({"run_version": trainer.logger.version})
     if args.mode == 'train':

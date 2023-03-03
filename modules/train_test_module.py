@@ -39,7 +39,7 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def shared_step(self, batch) -> Dict[str, Any]:
+    def shared_step(self, batch, **kwargs) -> Dict[str, Any]:
         raise NotImplementedError
 
     def log_n_parameters(self):
@@ -56,7 +56,7 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
         if self.train_scores is not None:
             for metric in self.train_scores:
                 self.train_scores[metric].to(self.device)
-        results = self.shared_step(batch)
+        results = self.shared_step(batch, mode='train')
         self.log('', results['loss'], on_step=True, on_epoch=True, prog_bar=True, logger=True)
         if self.train_scores is not None:
             for metric in self.train_scores:
