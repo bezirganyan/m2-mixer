@@ -82,22 +82,27 @@ class MMixerBlock(nn.Module):
 
 
 class MultimodalFusionMixer(nn.Module):
-    def __init__(self, hidden_dim, num_patches, num_mixers, token_dim, channel_dim, num_modality, modality_dim,
-                 dropout=0., **kwargs):
+    def __init__(self, hidden_dim, num_patches, num_mixers, token_dim, channel_dim, num_modality, proj_modality_dim,
+                 modality_dim, dropout=0., **kwargs):
         super().__init__()
 
         self.num_patch = num_patches
         self.mixer_blocks = nn.ModuleList([])
+        self.modality_projection = nn.Sequential(
+            Rearrange('b m n d -> b n d m'),
+            nn.Linear(num_modality, proj_modality_dim),
+            Rearrange('b n d m -> b m n d')
+        )
 
         for _ in range(num_mixers):
-            self.mixer_blocks.append(MMixerBlock(hidden_dim, self.num_patch, num_modality, modality_dim,
+            self.mixer_blocks.append(MMixerBlock(hidden_dim, self.num_patch, proj_modality_dim, modality_dim,
                                                  token_dim, channel_dim, dropout=dropout))
 
         self.layer_norm = nn.LayerNorm(hidden_dim)
 
     def forward(self, x):
         # x = self.to_patch_embedding(x)
-
+        x = self.modality_projection(x)
         for mixer_block in self.mixer_blocks:
             x = mixer_block(x)
 
