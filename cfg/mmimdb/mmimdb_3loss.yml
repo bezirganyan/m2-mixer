@@ -1,0 +1,78 @@
+train:
+  tensorboard_path: ./logs/
+  log_interval_steps: 10
+  epochs: 60
+  optimizer:
+    lr: 5e-4
+    betas: [0.9, 0.999]
+    eps: 1e-8
+    weight_decay: 0.0
+  seed: 42
+  monitor: val_loss
+  monitor_mode: min
+
+dataset:
+  type: MMIMDBDataModule
+  params:
+    data_dir: ../output/
+    batch_size: 32
+    num_workers: -1
+    max_seq_len: &max_seq_len 160
+
+    projection:
+      num_hashes: 64
+      feature_size: &feature_size 1024
+      window_size: &window_size 1
+
+    vocab:
+      tokenizer_type: wordpiece
+      tokenizer:
+        vocab: ./wordpiece/mbert_vocab.txt
+        lowercase: false
+        strip_accents: false
+        clean_text: false
+      vocab_path: vocab.npy
+
+model:
+  type: MMIMDBMixerMultiLoss
+  dropout: 0.5
+  pos_weight: [ 4.57642832, 7.38544978, 10.79846869, 13.23391421,
+                15.59020924, 18.62735849, 22.48861048, 25.21711367,
+                74.50943396, 31.31641554, 31.79549114, 32.90833333,
+                39.64859438, 56.90201729, 40.46106557, 58.24483776,
+                67.3890785, 84.92473118, 58.33087149, 62.68253968,
+                114.13294798, 141.54121864, 116.83431953 ]
+  modalities:
+    classification:
+      num_classes: 23
+      classifier: StandardClassifier
+      input_shape: [16, 49, 256]
+      hidden_dims: [1024, 512, 256, 32]
+    image:
+      block_type: MLPMixer
+      in_channels: 3
+      hidden_dim: 256
+      patch_size: 16
+      image_size: [160, 256]
+      token_dim: 32
+      channel_dim: 3072
+      num_mixers: 4
+    text:
+      block_type: PNLPMixer
+      max_seq_len: *max_seq_len
+      mlp_hidden_dim: 512
+      bottleneck_window_size: *window_size
+      bottleneck_features_size: *feature_size
+      in_channels: 1
+      hidden_dim: 256
+      num_mixers: 4
+    multimodal:
+      block_type: FusionMixer
+      fusion_function: ConcatFusion
+      hidden_dim: 256
+      token_dim: 32
+      channel_dim: 3072
+      num_mixers: 2
+      num_modality: 2
+      proj_modality_dim: 16
+      modality_dim: 64

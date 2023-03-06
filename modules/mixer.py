@@ -207,16 +207,19 @@ class MLPool(nn.Module):
 
 
 class PNLPMixer(nn.Module):
-    def __init__(self, max_seq_len, hidden_dim, num_mixers, mlp_hidden_dim,
-                 dropout=0., **kwargs):
+    def __init__(self, max_seq_len, hidden_dim, num_mixers, mlp_hidden_dim, bottleneck_window_size,
+                 bottleneck_features_size, dropout=0., **kwargs):
         super().__init__()
 
+        self.num_patch = max_seq_len
         # hidden_dim = dim
         # self.num_patch = max_seq_len
         # seq_hidden_dim = token_dim
         # channel_hidden_dim = channel_dim
 
         self.mixer_blocks = nn.ModuleList([])
+        self.bottleneck = nn.Linear((2 * bottleneck_window_size + 1) * bottleneck_features_size,
+                                    hidden_dim)
 
         for _ in range(num_mixers):
             self.mixer_blocks.append(
@@ -230,6 +233,7 @@ class PNLPMixer(nn.Module):
         # self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
+        x = self.bottleneck(x)
 
         for mixer_block in self.mixer_blocks:
             x = mixer_block(x)
