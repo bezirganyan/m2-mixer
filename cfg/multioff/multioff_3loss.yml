@@ -1,0 +1,73 @@
+train:
+  tensorboard_path: ./logs/
+  log_interval_steps: 10
+  epochs: 60
+  optimizer:
+    lr: 5e-4
+    betas: [0.9, 0.999]
+    eps: 1e-8
+    weight_decay: 0.0
+  seed: 42
+  monitor: val_loss
+  monitor_mode: min
+
+dataset:
+  type: MultiOFFDataModule
+  params:
+    data_dir: ../data/MultiOFF_Dataset
+    task_name: overall_sentiment
+    batch_size: 32
+    num_workers: -1
+    max_seq_len: &max_seq_len 256
+
+    projection:
+      num_hashes: 64
+      feature_size: &feature_size 1024
+      window_size: &window_size 1
+
+    vocab:
+      tokenizer_type: wordpiece
+      tokenizer:
+        vocab: ./wordpiece/mbert_vocab.txt
+        lowercase: false
+        strip_accents: false
+        clean_text: false
+      vocab_path: vocab.npy
+
+model:
+  type: MultiOFFMixerMultiLoss
+  dropout: 0.5
+  modalities:
+    classification:
+      num_classes: 1
+      classifier: StandardClassifier
+      input_shape: [16, 49, 128]
+      hidden_dims: [1024, 512, 256, 32]
+    image:
+      block_type: MLPMixer
+      in_channels: 3
+      hidden_dim: 128
+      patch_size: 16
+      image_size: [256, 256]
+      token_dim: 16
+      channel_dim: 128
+      num_mixers: 1
+    text:
+      block_type: PNLPMixer
+      max_seq_len: *max_seq_len
+      mlp_hidden_dim: 64
+      bottleneck_window_size: *window_size
+      bottleneck_features_size: *feature_size
+      in_channels: 1
+      hidden_dim: 128
+      num_mixers: 1
+    multimodal:
+      block_type: FusionMixer
+      fusion_function: ConcatFusion
+      hidden_dim: 128
+      token_dim: 16
+      channel_dim: 128
+      num_mixers: 1
+      num_modality: 2
+      proj_modality_dim: 16
+      modality_dim: 64

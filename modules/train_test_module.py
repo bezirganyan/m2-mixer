@@ -1,4 +1,5 @@
 import abc
+import time
 from typing import List, Dict, Any
 
 import numpy as np
@@ -21,14 +22,27 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
         super(AbstractTrainTestModule, self).__init__(**kwargs)
         self.criterion = self.setup_criterion()
         self.train_scores, self.val_scores, self.test_scores = self.setup_scores()
-        if any([isinstance(self.train_scores, list), isinstance(self.val_scores, list), isinstance(self.test_scores, list)]):
+        if any([isinstance(self.train_scores, list), isinstance(self.val_scores, list),
+                isinstance(self.test_scores, list)]):
             raise ValueError('Scores must be a dict')
         self.best_epochs = {'val_loss': None}
         if self.val_scores is not None:
             for metric in self.val_scores:
                 self.best_epochs[metric] = None
 
-        self.logged_n_paarameters = False
+        self.logged_n_parameters = False
+        self.train_time_start = None
+        self.test_time_start = None
+
+    def on_train_start(self) -> None:
+        self.train_time_start = time.time()
+
+    def on_test_start(self) -> None:
+        self.test_time_start = time.time()
+
+    def on_test_end(self) -> None:
+        test_time = time.time() - self.test_time_start
+        wandb.run.summary['test_time'] = test_time
 
     @abc.abstractmethod
     def setup_criterion(self) -> torch.nn.Module:
@@ -43,13 +57,13 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
         raise NotImplementedError
 
     def log_n_parameters(self):
-        if not self.logged_n_paarameters:
+        if not self.logged_n_parameters:
             trainable_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
             total_parameters = sum(p.numel() for p in self.parameters())
 
             wandb.run.summary['trainable_parameters'] = trainable_parameters
             wandb.run.summary['total_parameters'] = total_parameters
-            self.logged_n_paarameters = True
+            self.logged_n_parameters = True
 
     def training_step(self, batch, batch_idx):
         self.log_n_parameters()
@@ -96,6 +110,8 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
             self.best_epochs['val_loss'] = (self.current_epoch, val_loss)
             wandb.run.summary['best_val_loss'] = val_loss
             wandb.run.summary['best_val_loss_epoch'] = self.current_epoch
+            duration = time.time() - self.train_time_start
+            wandb.run.summary['best_val_loss_time'] = duration
             if self.val_scores is not None:
                 for metric in self.val_scores:
                     val_score = self.val_scores[metric].compute()
@@ -107,7 +123,7 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
                 probs=None,
                 y_true=labs.long().cpu().numpy(),
                 preds=preds.long().cpu().numpy(),
-                class_names=range(max(preds.max().item(), labs.max().item())+1),
+                class_names=range(max(preds.max().item(), labs.max().item()) + 1),
             )})
 
     def test_step(self, batch, batch_idx):
@@ -135,7 +151,7 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
                 probs=None,
                 y_true=labs.long().cpu().numpy(),
                 preds=preds.long().cpu().numpy(),
-                class_names=range(max(preds.max().item(), labs.max().item())+1),
+                class_names=range(max(preds.max().item(), labs.max().item()) + 1),
             )})
 
     def configure_optimizers(self):
