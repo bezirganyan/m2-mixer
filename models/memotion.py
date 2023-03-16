@@ -7,16 +7,17 @@ import torch
 from omegaconf import DictConfig
 from softadapt import LossWeightedSoftAdapt
 from torch import nn
-from torch.nn import BCEWithLogitsLoss
-from torchmetrics import F1Score
+from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss
+from torchmetrics import F1Score, Accuracy
 
 import modules
 from modules.train_test_module import AbstractTrainTestModule
 
 
-class MMIMDBMixerMultiLoss(AbstractTrainTestModule):
+class MemotionMixerMultiLoss(AbstractTrainTestModule):
     def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
-        super(MMIMDBMixerMultiLoss, self).__init__(optimizer_cfg, log_confusion_matrix=False, **kwargs)
+        self.num_classes = model_cfg.modalities.classification.get('num_classes', 3)
+        super(MemotionMixerMultiLoss, self).__init__(optimizer_cfg, log_confusion_matrix=False, **kwargs)
         self.modalities_freezed = False
         self.optimizer_cfg = optimizer_cfg
         self.checkpoint_path = None
@@ -40,10 +41,9 @@ class MMIMDBMixerMultiLoss(AbstractTrainTestModule):
                                                 model_cfg.modalities.classification.num_classes)
         self.classifier_fusion = modules.get_classifier_by_name(**model_cfg.modalities.classification)
 
-        pos_weight = torch.tensor(model_cfg.pos_weight)
-        self.image_criterion = BCEWithLogitsLoss(pos_weight=pos_weight)
-        self.text_criterion = BCEWithLogitsLoss(pos_weight=pos_weight)
-        self.fusion_criterion = BCEWithLogitsLoss(pos_weight=pos_weight)
+        self.image_criterion = CrossEntropyLoss()
+        self.text_criterion = CrossEntropyLoss()
+        self.fusion_criterion = CrossEntropyLoss()
 
         self.use_softadapt = model_cfg.get('use_softadapt', False)
         if self.use_softadapt:
@@ -104,9 +104,9 @@ class MMIMDBMixerMultiLoss(AbstractTrainTestModule):
         logits = self.classifier_fusion(logits)
 
         # compute losses
-        loss_image = self.image_criterion(image_logits, labels.float())
-        loss_text = self.text_criterion(text_logits, labels.float())
-        loss_fusion = self.fusion_criterion(logits, labels.float())
+        loss_image = self.image_criterion(image_logits, labels)
+        loss_text = self.text_criterion(text_logits, labels)
+        loss_fusion = self.fusion_criterion(logits, labels)
 
         if self.use_softadapt:
             loss = self.loss_weights[0] * loss_image + self.loss_weights[1] * loss_text + self.loss_weights[
@@ -117,12 +117,9 @@ class MMIMDBMixerMultiLoss(AbstractTrainTestModule):
             loss = loss_fusion
 
         # get predictions
-        preds = torch.sigmoid(logits) > 0.5
-        preds = preds.long()
-        preds_image = torch.sigmoid(image_logits) > 0.5
-        preds_image = preds_image.long()
-        preds_text = torch.sigmoid(text_logits) > 0.5
-        preds_text = preds_text.long()
+        preds = torch.softmax(logits, dim=1).argmax(dim=1)
+        preds_image = torch.softmax(image_logits, dim=1).argmax(dim=1)
+        preds_text = torch.softmax(text_logits, dim=1).argmax(dim=1)
 
         return {
             'preds': preds,
@@ -174,12 +171,9 @@ class MMIMDBMixerMultiLoss(AbstractTrainTestModule):
         return None
 
     def setup_scores(self) -> List[torch.nn.Module]:
-        train_scores = dict(f1w=F1Score(task="multilabel", num_labels=23, average='weighted'),
-                            f1m=F1Score(task="multilabel", num_labels=23, average='macro'))
-        val_scores = dict(f1w=F1Score(task="multilabel", num_labels=23, average='weighted'),
-                          f1m=F1Score(task="multilabel", num_labels=23, average='macro'))
-        test_scores = dict(f1w=F1Score(task="multilabel", num_labels=23, average='weighted'),
-                           f1m=F1Score(task="multilabel", num_labels=23, average='macro'))
+        train_scores = dict(f1m=F1Score(task="multiclass", num_classes=self.num_classes, average='macro'))
+        val_scores = dict(f1m=F1Score(task="multiclass", num_classes=self.num_classes, average='macro'))
+        test_scores = dict(f1m=F1Score(task="multiclass", num_classes=self.num_classes, average='macro'))
 
         return [train_scores, val_scores, test_scores]
 

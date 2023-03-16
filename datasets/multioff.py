@@ -15,7 +15,7 @@ from datasets.transforms import RuinModality
 from utils.projection import Projection
 
 
-class MemotionDataModule(pl.LightningDataModule):
+class MultiOFFDataModule(pl.LightningDataModule):
 
     def __init__(self, data_dir: str, batch_size: int, num_workers: int, vocab: DictConfig, projection: DictConfig,
                  max_seq_len: int, task_name: str, **kwargs):
@@ -32,7 +32,7 @@ class MemotionDataModule(pl.LightningDataModule):
     def setup(self, stage: str = None):
         train_transforms = dict(image=T.Compose([
             T.ToTensor(),
-            T.Resize(size=(256, 256), interpolation=InterpolationMode.BICUBIC, max_size=None, antialias=None),
+            T.Resize(size=(512, 512), interpolation=InterpolationMode.BICUBIC, max_size=None, antialias=None),
             T.Normalize(
                 mean=[0.485, 0.456, 0.406],
                 std=[0.229, 0.224, 0.225]
@@ -40,21 +40,21 @@ class MemotionDataModule(pl.LightningDataModule):
 
         val_test_transforms = dict(image=T.Compose([
             T.ToTensor(),
-            T.Resize(size=(256, 256), interpolation=InterpolationMode.BICUBIC, max_size=None, antialias=None),
+            T.Resize(size=(512, 512), interpolation=InterpolationMode.BICUBIC, max_size=None, antialias=None),
             T.Normalize(
                 mean=[0.485, 0.456, 0.406],
                 std=[0.229, 0.224, 0.225]
             )]))
 
-        self.train_set = MemotionDataset(os.path.join(self.data_dir), stage='train', tokenizer=self.tokenizer,
+        self.train_set = MultiOFFDataset(os.path.join(self.data_dir), stage='train', tokenizer=self.tokenizer,
                                          projection=self.projecion, max_seq_len=self.max_seq_len,
                                          transform=train_transforms,
                                          task_name=self.task_name)
-        self.eval_set = MemotionDataset(os.path.join(self.data_dir), stage='dev', tokenizer=self.tokenizer,
+        self.eval_set = MultiOFFDataset(os.path.join(self.data_dir), stage='dev', tokenizer=self.tokenizer,
                                         projection=self.projecion, max_seq_len=self.max_seq_len,
                                         transform=val_test_transforms,
                                         task_name=self.task_name)
-        self.test_set = MemotionDataset(os.path.join(self.data_dir), stage='test', tokenizer=self.tokenizer,
+        self.test_set = MultiOFFDataset(os.path.join(self.data_dir), stage='test', tokenizer=self.tokenizer,
                                         projection=self.projecion, max_seq_len=self.max_seq_len,
                                         transform=val_test_transforms,
                                         task_name=self.task_name)
@@ -72,7 +72,7 @@ class MemotionDataModule(pl.LightningDataModule):
                           num_workers=self.num_workers, persistent_workers=True)
 
 
-class MemotionDataset(Dataset):
+class MultiOFFDataset(Dataset):
 
     def __init__(self, root_dir, tokenizer, projection, max_seq_len, feat_dim=100, stage='train', task_name='humour',
                  transform=None):
@@ -83,19 +83,14 @@ class MemotionDataset(Dataset):
                 on a sample.
         """
 
-        self.task_name = task_name
-        self.ref = pd.read_csv(os.path.join(root_dir, 'labels.csv'))
-        self.ref = self.ref.dropna()
-        indices = np.load(os.path.join(root_dir, 'shuffled.npy'))
         if stage == 'train':
-            self.ref = self.ref.iloc[indices[:int(0.7 * len(self.ref))]]
+            self.ref = pd.read_csv(os.path.join(root_dir, 'Split Dataset', 'Training_meme_dataset.csv'))
         elif stage == 'test':
-            self.ref = self.ref.iloc[indices[int(0.7 * len(self.ref)):int(0.9 * len(self.ref))]]
+            self.ref = pd.read_csv(os.path.join(root_dir, 'Split Dataset', 'Testing_meme_dataset.csv'))
         elif stage == 'dev':
-            self.ref = self.ref.iloc[indices[int(0.9 * len(self.ref)):]]
+            self.ref = pd.read_csv(os.path.join(root_dir, 'Split Dataset', 'Validation_meme_dataset.csv'))
         self.len_data = self.ref.shape[0]
-        self.ref[self.task_name] = self.ref[self.task_name].astype('category')
-        self.ref[self.task_name] = self.ref[self.task_name].cat.codes.astype('int')
+        self.ref.iloc[:, -1] = self.ref.iloc[:, -1].apply(lambda x: 1 if x == 'offensive' else 0)
         self.transform = transform
         self.root_dir = root_dir
         self.stage = stage
@@ -111,10 +106,10 @@ class MemotionDataset(Dataset):
 
     def __getitem__(self, idx: int) -> dict:
 
-        imagepath = os.path.join(self.root_dir, 'images', self.ref['image_name'].iloc[idx])
-        text = self.ref['text_corrected'].iloc[idx]
+        imagepath = os.path.join(self.root_dir, 'Labelled Images', self.ref['image_name'].iloc[idx])
+        text = self.ref['sentence'].iloc[idx]
 
-        label = self.ref[self.task_name].iloc[idx]
+        label = self.ref['label'].iloc[idx]
 
         # image = np.array(Image.open(imagepath).convert('RGB')).T
         image = Image.open(imagepath).convert('RGB')
