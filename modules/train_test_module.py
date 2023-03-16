@@ -110,8 +110,9 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
             self.best_epochs['val_loss'] = (self.current_epoch, val_loss)
             wandb.run.summary['best_val_loss'] = val_loss
             wandb.run.summary['best_val_loss_epoch'] = self.current_epoch
-            duration = time.time() - self.train_time_start
-            wandb.run.summary['best_val_loss_time'] = duration
+            if self.train_time_start is not None:
+                duration = time.time() - self.train_time_start
+                wandb.run.summary['best_val_loss_time'] = duration
             if self.val_scores is not None:
                 for metric in self.val_scores:
                     val_score = self.val_scores[metric].compute()

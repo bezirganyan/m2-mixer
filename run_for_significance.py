@@ -43,7 +43,7 @@ if __name__ == '__main__':
     for r in range(args.runs):
         trainer = pl.Trainer(
             callbacks=[
-                pl.callbacks.EarlyStopping(monitor='val_loss', patience=10, mode='min'),
+                pl.callbacks.EarlyStopping(monitor='val_loss', patience=30, mode='min'),
                 pl.callbacks.ModelCheckpoint(
                     monitor=train_cfg.monitor,
                     save_last=True,
@@ -51,7 +51,8 @@ if __name__ == '__main__':
                     mode=train_cfg.monitor_mode
                 )
             ],
-            gpus=-1,
+            accelerator='gpu',
+            devices=-1,
             log_every_n_steps=train_cfg.log_interval_steps,
             logger=pl.loggers.TensorBoardLogger(train_cfg.tensorboard_path, args.name),
             max_epochs=train_cfg.epochs
