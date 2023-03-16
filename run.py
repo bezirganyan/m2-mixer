@@ -65,7 +65,8 @@ if __name__ == '__main__':
                 mode=train_cfg.monitor_mode
             )
         ],
-        gpus=-1,
+        accelerator='gpu',
+        devices=-1,
         log_every_n_steps=train_cfg.log_interval_steps,
         logger=pl.loggers.TensorBoardLogger(train_cfg.tensorboard_path, args.name),
         max_epochs=train_cfg.epochs,
