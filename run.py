@@ -17,6 +17,7 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument('-n', '--name', type=str)
     parser.add_argument('-p', '--ckpt', type=str)
     parser.add_argument('-m', '--mode', type=str, default='train')
+
     parser.add_argument('--disable-wandb', action='store_true', default=False)
     args, unknown = parser.parse_known_args()
     return args, unknown
@@ -69,8 +70,7 @@ if __name__ == '__main__':
         devices=-1,
         log_every_n_steps=train_cfg.log_interval_steps,
         logger=pl.loggers.TensorBoardLogger(train_cfg.tensorboard_path, args.name),
-        max_epochs=train_cfg.epochs,
-        num_sanity_val_steps=-1,
+        max_epochs=train_cfg.epochs
     )
     wandb.config.update({"run_version": trainer.logger.version})
     if args.mode == 'train':
