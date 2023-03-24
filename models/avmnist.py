@@ -3,9 +3,11 @@ from os import path
 
 import numpy as np
 import wandb
+from labml_helpers.schedule import RelativePiecewise
 from omegaconf import DictConfig
 from softadapt import LossWeightedSoftAdapt, NormalizedSoftAdapt
 from torch import nn
+from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
 
 from modules.losses import EDLMSELoss
 from modules.train_test_module import AbstractTrainTestModule
@@ -17,7 +19,7 @@ import torch
 
 from typing import List, Any, Optional
 from torch.nn import CrossEntropyLoss
-from torchmetrics import Accuracy
+from torchmetrics import Accuracy, F1Score, Precision, Recall
 import modules
 
 
@@ -350,9 +352,18 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         return None
 
     def setup_scores(self) -> List[torch.nn.Module]:
-        train_scores = dict(acc=Accuracy(task="multiclass", num_classes=10))
-        val_scores = dict(acc=Accuracy(task="multiclass", num_classes=10))
-        test_scores = dict(acc=Accuracy(task="multiclass", num_classes=10))
+        train_scores = dict(acc=Accuracy(task="multiclass", num_classes=10),
+                            f1m=F1Score(task="multiclass", num_classes=10, average='macro'),
+                            prec_m=Precision(task="multiclass", num_classes=10, average='macro'),
+                            rec_m=Recall(task="multiclass", num_classes=10, average='macro'))
+        val_scores = dict(acc=Accuracy(task="multiclass", num_classes=10),
+                          f1m=F1Score(task="multiclass", num_classes=10, average='macro'),
+                          prec_m=Precision(task="multiclass", num_classes=10, average='macro'),
+                          rec_m=Recall(task="multiclass", num_classes=10, average='macro'))
+        test_scores = dict(acc=Accuracy(task="multiclass", num_classes=10),
+                           f1m=F1Score(task="multiclass", num_classes=10, average='macro'),
+                           prec_m=Precision(task="multiclass", num_classes=10, average='macro'),
+                           rec_m=Recall(task="multiclass", num_classes=10, average='macro'))
 
         return [train_scores, val_scores, test_scores]
 
@@ -387,10 +398,39 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         model.checkpoint_path = checkpoint_path
         return model
 
-    def init_weights(self):
-        for param in self.parameters():
-            if param.dim() > 1:
-                nn.init.xavier_uniform_(param)
+    def configure_optimizers(self):
+        optimizer_cfg = self.optimizer_cfg
+        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
+        scheduler = ReduceLROnPlateau(optimizer, patience=5, verbose=True)
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": scheduler,
+            "monitor": "val_loss",
+        }
+
+    def intermediate_step(self, batch: Any) -> Any:
+        image = batch['image']
+        audio = batch['audio']
+        labels = batch['label']
+
+        # get modality encodings from feature extractors
+        image_logits = self.image_mixer(image)
+        audio_logits = self.audio_mixer(audio)
+
+        fused_moalities = self.fusion_function(image_logits, audio_logits)
+        logits = self.fusion_mixer(fused_moalities)
+
+        # fuse modalities
+        results = self.shared_step(batch)
+
+        fusion_correct = results['preds'] == labels
+        image_correct = results['preds_image'] == labels
+        audio_correct = results['preds_audio'] == labels
+
+        return dict(image_logits=image_logits, audio_logits=audio_logits, logits=logits,
+                    fusion_correct=fusion_correct, image_correct=image_correct, audio_correct=audio_correct)
+
 
 
 class AVMnistMixerMultiLossUQ(AVMnistMixerMultiLoss):
@@ -462,13 +502,14 @@ class AVMnistMixerMultiLossUQ(AVMnistMixerMultiLoss):
             loss = loss_fusion
 
         # get predictions
-        preds = logits.argmax(dim=1)
-        preds_image = image_logits.argmax(dim=1)
-        preds_audio = audio_logits.argmax(dim=1)
 
         evidence = nn.functional.relu(logits)
         evidence_image = nn.functional.relu(image_logits)
         evidence_audio = nn.functional.relu(audio_logits)
+
+        preds = evidence.argmax(dim=1)
+        preds_image = evidence_image.argmax(dim=1)
+        preds_audio = evidence_audio.argmax(dim=1)
 
         alpha = evidence + 1
         alpha_image = evidence_image + 1
@@ -479,8 +520,10 @@ class AVMnistMixerMultiLossUQ(AVMnistMixerMultiLoss):
         uncertainty_audio = self.num_classes / torch.sum(alpha_audio, dim=1, keepdim=True).squeeze(1)
 
         pred_combined = preds * (((uncertainty < uncertainty_image) & (uncertainty < uncertainty_audio))).long() \
-                        + preds_image * (((uncertainty_image < uncertainty) & (uncertainty_image < uncertainty_audio))).long() \
-                        + preds_audio * (((uncertainty_audio < uncertainty) & (uncertainty_audio < uncertainty_image))).long()
+                        + preds_image * (
+                        ((uncertainty_image < uncertainty) & (uncertainty_image < uncertainty_audio))).long() \
+                        + preds_audio * (
+                        ((uncertainty_audio < uncertainty) & (uncertainty_audio < uncertainty_image))).long()
 
         return {
             'preds': pred_combined,
@@ -516,6 +559,14 @@ class AVMnistMixerMultiLossUQ(AVMnistMixerMultiLoss):
         wandb.log({'test_uncertainty': torch.stack([x['uncertainty'] for x in outputs]).mean()})
         wandb.log({'test_uncertainty_image': torch.stack([x['uncertainty_image'] for x in outputs]).mean()})
         wandb.log({'test_uncertainty_audio': torch.stack([x['uncertainty_audio'] for x in outputs]).mean()})
+
+    # def configure_optimizers(self):
+    #     optimizer_cfg = self.optimizer_cfg
+    #     optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
+    #     scheduler = StepLR(optimizer, step_size=1, gamma=0.1)
+    #
+    #     return [optimizer], [scheduler]
+
 
 class AVMNISTMixedFusion(AVMnistMixerMultiLoss):
     def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):

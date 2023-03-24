@@ -35,12 +35,15 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
         self.test_time_start = None
 
     def on_train_start(self) -> None:
+        super().on_train_start()
         self.train_time_start = time.time()
 
     def on_test_start(self) -> None:
+        super().on_test_start()
         self.test_time_start = time.time()
 
     def on_test_end(self) -> None:
+        super().on_test_end()
         test_time = time.time() - self.test_time_start
         wandb.run.summary['test_time'] = test_time
 
@@ -106,7 +109,7 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
                 self.log(f'val_{metric}', val_score, prog_bar=True, logger=True)
         val_loss = np.mean([output['loss'].cpu().item() for output in outputs])
         wandb.log({'val_loss': val_loss})
-        if self.best_epochs['val_loss'] is None or (val_loss < self.best_epochs['val_loss'][1]):
+        if self.best_epochs['val_loss'] is None or (val_loss <= self.best_epochs['val_loss'][1]):
             self.best_epochs['val_loss'] = (self.current_epoch, val_loss)
             wandb.run.summary['best_val_loss'] = val_loss
             wandb.run.summary['best_val_loss_epoch'] = self.current_epoch
@@ -159,3 +162,7 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
         optimizer_cfg = self.optimizer_cfg
         optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
         return optimizer
+
+    def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
+        results = self.shared_step(batch)
+        return results
