@@ -3,7 +3,7 @@ train:
   log_interval_steps: 10
   epochs: 120
   optimizer:
-    lr: 1e-2
+    lr: 1e-3
     betas: [0.9, 0.999]
     eps: 1e-8
     weight_decay: 0.0
@@ -17,12 +17,12 @@ dataset:
     data_dir: ../data/MMHS150
     task: binary
     batch_size: 32
-    num_workers: -1
-    max_seq_len: &max_seq_len 1024
+    num_workers: 2
+    max_seq_len: &max_seq_len 64
 
     projection:
       num_hashes: 64
-      feature_size: &feature_size 1024
+      feature_size: &feature_size 512
       window_size: &window_size 1
 
     vocab:
@@ -47,10 +47,10 @@ model:
       block_type: MLPMixer
       in_channels: 3
       hidden_dim: 128
-      patch_size: 16
-      image_size: [512, 512]
+      patch_size: 32
+      image_size: [256, 256]
       token_dim: 16
-      channel_dim: 128
+      channel_dim: 256
       num_mixers: 1
     text:
       block_type: PNLPMixer

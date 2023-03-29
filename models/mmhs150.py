@@ -8,16 +8,16 @@ from omegaconf import DictConfig
 from softadapt import LossWeightedSoftAdapt
 from torch import nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss
-from torchmetrics import F1Score, Accuracy, Precision, Recall
+from torchmetrics import F1Score, Accuracy, Precision, Recall, AUROC
 
 import modules
 from modules.train_test_module import AbstractTrainTestModule
 
 
-class MultiOFFMixerMultiLoss(AbstractTrainTestModule):
+class MMHS150MultiLoss(AbstractTrainTestModule):
     def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
         self.num_classes = model_cfg.modalities.classification.get('num_classes', 3)
-        super(MultiOFFMixerMultiLoss, self).__init__(optimizer_cfg, log_confusion_matrix=False, **kwargs)
+        super(MMHS150MultiLoss, self).__init__(optimizer_cfg, log_confusion_matrix=False, **kwargs)
         self.modalities_freezed = False
         self.optimizer_cfg = optimizer_cfg
         self.checkpoint_path = None
@@ -31,18 +31,22 @@ class MultiOFFMixerMultiLoss(AbstractTrainTestModule):
         dropout = model_cfg.get('dropout', 0.0)
         self.image_mixer = modules.get_block_by_name(**image_config, dropout=dropout)
         self.text_mixer = modules.get_block_by_name(**text_config, dropout=dropout)
+        self.text_ocr_mixer = modules.get_block_by_name(**text_config, dropout=dropout)
         self.fusion_function = modules.get_fusion_by_name(**model_cfg.modalities.multimodal)
         num_patches = self.fusion_function.get_output_shape(self.image_mixer.num_patch, self.text_mixer.num_patch,
-                                                            dim=1)
+                                                            self.text_ocr_mixer.num_patch, dim=1)
         self.fusion_mixer = modules.get_block_by_name(**multimodal_config, num_patches=num_patches, dropout=dropout)
         self.classifier_image = torch.nn.Linear(model_cfg.modalities.image.hidden_dim,
                                                 model_cfg.modalities.classification.num_classes)
         self.classifier_text = torch.nn.Linear(model_cfg.modalities.text.hidden_dim,
                                                model_cfg.modalities.classification.num_classes)
+        self.classifier_text_ocr = torch.nn.Linear(model_cfg.modalities.text.hidden_dim,
+                                                    model_cfg.modalities.classification.num_classes)
         self.classifier_fusion = modules.get_classifier_by_name(**model_cfg.modalities.classification)
 
-        self.image_criterion = BCEWithLogitsLoss()
+        self.image_criterion = BCEWithLogitsLoss(pos_weight=torch.tensor([3.0]))
         self.text_criterion = BCEWithLogitsLoss()
+        self.text_ocr_criterion = BCEWithLogitsLoss()
         self.fusion_criterion = BCEWithLogitsLoss()
 
         self.use_softadapt = model_cfg.get('use_softadapt', False)
@@ -59,60 +63,40 @@ class MultiOFFMixerMultiLoss(AbstractTrainTestModule):
 
         image = batch['image']
         text = batch['text']
+        text_ocr = batch['ocr']
         labels = batch['label']
-
-        if kwargs.get('mode', None) == 'train':
-            if self.freeze_modalities_on_epoch is not None and (self.current_epoch == self.freeze_modalities_on_epoch) \
-                    and not self.modalities_freezed:
-                print('Freezing modalities')
-                for param in self.image_mixer.parameters():
-                    param.requires_grad = False
-                for param in self.text_mixer.parameters():
-                    param.requires_grad = False
-                for param in self.classifier_image.parameters():
-                    param.requires_grad = False
-                for param in self.classifier_text.parameters():
-                    param.requires_grad = False
-                self.modalities_freezed = True
-
-            if self.random_modality_muting_on_freeze and (self.current_epoch >= self.freeze_modalities_on_epoch):
-                self.mute = np.random.choice(['image', 'text', 'multimodal'], p=[self.muting_probs['image'],
-                                                                                 self.muting_probs['text'],
-                                                                                 self.muting_probs['multimodal']])
-
-            if self.mute != 'multimodal':
-                if self.mute == 'image':
-                    image = torch.zeros_like(image)
-                elif self.mute == 'text':
-                    text = torch.zeros_like(text)
 
         # get modality encodings from feature extractors
         image_logits = self.image_mixer(image)
         text_logits = self.text_mixer(text)
+        text_ocr_logits = self.text_ocr_mixer(text_ocr)
 
         # fuse modalities
-        fused_moalities = self.fusion_function(image_logits, text_logits)
+        fused_moalities = self.fusion_function(image_logits, text_logits, text_ocr_logits)
         logits = self.fusion_mixer(fused_moalities)
 
         # logits = logits.reshape(logits.shape[0], -1, logits.shape[-1])
         text_logits = text_logits.reshape(text_logits.shape[0], -1, text_logits.shape[-1])
         image_logits = image_logits.reshape(image_logits.shape[0], -1, image_logits.shape[-1])
+        text_ocr_logits = text_ocr_logits.reshape(text_ocr_logits.shape[0], -1, text_ocr_logits.shape[-1])
 
         # get logits for each modality
         image_logits = self.classifier_image(image_logits.mean(dim=1))
         text_logits = self.classifier_text(text_logits.mean(dim=1))
+        text_ocr_logits = self.classifier_text_ocr(text_ocr_logits.mean(dim=1))
         logits = self.classifier_fusion(logits)
 
         # compute losses
         loss_image = self.image_criterion(image_logits, labels.unsqueeze(1).float())
         loss_text = self.text_criterion(text_logits, labels.unsqueeze(1).float())
+        loss_text_ocr = self.text_ocr_criterion(text_ocr_logits, labels.unsqueeze(1).float())
         loss_fusion = self.fusion_criterion(logits, labels.unsqueeze(1).float())
 
         if self.use_softadapt:
             loss = self.loss_weights[0] * loss_image + self.loss_weights[1] * loss_text + self.loss_weights[
                 2] * loss_fusion
         else:
-            loss = loss_image + loss_text + loss_fusion
+            loss = loss_image + loss_text + loss_fusion + loss_text_ocr
         if self.modalities_freezed and kwargs.get('mode', None) == 'train':
             loss = loss_fusion
 
@@ -121,18 +105,22 @@ class MultiOFFMixerMultiLoss(AbstractTrainTestModule):
         # preds = torch.tensor(np.random.choice([0, 1], size=preds.shape, p=[0.5, 0.5])).long()
         preds_image = (torch.sigmoid(image_logits) > 0.5).long()
         preds_text = (torch.sigmoid(text_logits) > 0.5).long()
+        preds_text_ocr = (torch.sigmoid(text_ocr_logits) > 0.5).long()
 
         return {
             'preds': preds,
             'preds_image': preds_image,
             'preds_text': preds_text,
+            'preds_text_ocr': preds_text_ocr,
             'labels': labels.unsqueeze(1).long(),
             'loss': loss,
             'loss_image': loss_image,
             'loss_text': loss_text,
             'loss_fusion': loss_fusion,
+            'loss_text_ocr': loss_text_ocr,
             'image_logits': image_logits,
             'text_logits': text_logits,
+            'text_ocr_logits': text_ocr_logits,
             'logits': logits
         }
 
@@ -175,15 +163,18 @@ class MultiOFFMixerMultiLoss(AbstractTrainTestModule):
         train_scores = dict(f1=F1Score(task="binary"),
                             accuracy=Accuracy(task="binary"),
                             precision=Precision(task="binary"),
-                            recall=Recall(task="binary"))
+                            recall=Recall(task="binary"),
+                            auc=AUROC(task="binary"))
         val_scores = dict(f1=F1Score(task="binary"),
                           accuracy=Accuracy(task="binary"),
                           precision=Precision(task="binary"),
-                          recall=Recall(task="binary"))
+                          recall=Recall(task="binary"),
+                          auc=AUROC(task="binary"))
         test_scores = dict(f1=F1Score(task="binary"),
                            accuracy=Accuracy(task="binary"),
                            precision=Precision(task="binary"),
-                           recall=Recall(task="binary"))
+                           recall=Recall(task="binary"),
+                           auc=AUROC(task="binary"))
 
         return [train_scores, val_scores, test_scores]
 

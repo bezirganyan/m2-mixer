@@ -3,9 +3,13 @@ import sys
 import pytorch_lightning as pl
 
 from .avmnist import *
+from .avmnist_post import *
 from .convnet import *
 from .mmimdb_mixer import *
 from .mmimdb_gmlp import *
+from .mmimdb import *
+from .multioff import *
+from .mmhs150 import *
 
 
 def get_model(model_type: str) -> type[pl.LightningModule]:
