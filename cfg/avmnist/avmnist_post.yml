@@ -1,0 +1,30 @@
+train:
+  tensorboard_path: ./logs/
+  log_interval_steps: 10
+  epochs: 200
+  optimizer:
+    lr: 1e-3
+    betas: [0.9, 0.999]
+    eps: 1e-8
+    weight_decay: 0.0
+  seed: 42
+  monitor: val_loss
+  monitor_mode: min
+
+dataset:
+  type: AVMnistIntermediateDataModule
+  params:
+    data_dir: corrects_data
+    batch_size: 32
+    num_workers: -1
+    modality: image
+model:
+  type: AVMnistMixerMultiLossTP
+  dropout: 0.1
+  pos_weight: [1.487974460947434] # image
+  modalities:
+    classification:
+      num_classes: 1
+      classifier: BasicClassifier
+      input_shape: [16, 49, 3136]
+      hidden_dims: [2048, 1024, 512, 256, 128, 64, 32]

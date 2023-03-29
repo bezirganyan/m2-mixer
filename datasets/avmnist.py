@@ -163,8 +163,6 @@ class AVMnistDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
 
-
-
     def setup(self, stage: str = None):
         # transform = T.Compose([ToTensor(), RandomModalityMuting(p_muting=self.p_muting)])
         transform = T.Compose([ToTensor()])
@@ -179,15 +177,85 @@ class AVMnistDataModule(pl.LightningDataModule):
         self.train_subset = Subset(train_dataset, train_idxs)
         self.valid_subset = Subset(val_dataset, valid_idxs)
 
-
     def train_dataloader(self) -> DataLoader:
         return DataLoader(dataset=self.train_subset, batch_size=self.batch_size, shuffle=False,
-                                  num_workers=self.num_workers)
+                          num_workers=self.num_workers)
 
     def val_dataloader(self) -> DataLoader:
         return DataLoader(dataset=self.valid_subset, batch_size=self.batch_size, shuffle=False,
-                                  num_workers=self.num_workers)
+                          num_workers=self.num_workers)
 
     def test_dataloader(self) -> DataLoader:
         return DataLoader(dataset=self.test_dataset, batch_size=self.batch_size, shuffle=True,
-                                  num_workers=self.num_workers)
+                          num_workers=self.num_workers)
+
+
+class AVMnistIntermediate(Dataset):
+
+    def __init__(self, root_dir='./corrects_data',  # args.datadir
+                 stage='train', modality='multi'):
+        if modality == 'multi':
+            self.data_image = np.load(os.path.join(root_dir, stage + '/image_vectors.npy'))
+            self.data_audio = np.load(os.path.join(root_dir, stage + '/audio_vectors.npy'))
+            self.data_fusion = np.load(os.path.join(root_dir, stage + '/fusion_vectors.npy'))
+            self.image_labels = np.load(os.path.join(root_dir, stage + '/image_corrects.npy'))
+            self.audio_labels = np.load(os.path.join(root_dir, stage + '/audio_corrects.npy'))
+            self.fusion_labels = np.load(os.path.join(root_dir, stage + '/fusion_corrects.npy'))
+        elif modality in ('image', 'audio', 'fusion'):
+            self.data = np.load(os.path.join(root_dir, stage + '/' + modality + '_vectors.npy'))
+            self.labels = np.load(os.path.join(root_dir, stage + '/' + modality + '_corrects.npy'))
+        else:
+            raise ValueError('Modality should be one of multi, image, audio, fusion')
+
+    def __len__(self):
+        if hasattr(self, 'data'):
+            return self.data.shape[0]
+        else:
+            return self.data_image.shape[0]
+
+    def __getitem__(self, idx):
+        if hasattr(self, 'data'):
+            data = self.data[idx]
+            label = self.labels[idx]
+            sample = {'data': data, 'label': label}
+        else:
+            image = self.data_image[idx]
+            audio = self.data_audio[idx]
+            fusion = self.data_fusion[idx]
+            image_label = self.image_labels[idx]
+            audio_label = self.audio_labels[idx]
+            fusion_label = self.fusion_labels[idx]
+
+            sample = {'image': image, 'audio': audio, 'fusion': fusion,
+                      'image_label': image_label, 'audio_label': audio_label, 'fusion_label': fusion_label}
+
+        return sample
+
+
+class AVMnistIntermediateDataModule(pl.LightningDataModule):
+    def __init__(self, data_dir, batch_size, num_workers, modality='multi', **kwargs):
+        super().__init__()
+        self.test_dataset = None
+        self.valid_dataset = None
+        self.train_dataset = None
+        self.modality = modality
+        self.data_dir = data_dir
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+
+    def setup(self, stage: str = None):
+        self.train_dataset = AVMnistIntermediate(root_dir=self.data_dir, stage='train', modality=self.modality)
+        self.valid_dataset = AVMnistIntermediate(root_dir=self.data_dir, stage='train', modality=self.modality)
+        self.test_dataset = AVMnistIntermediate(root_dir=self.data_dir, stage='test', modality=self.modality)
+
+    def train_dataloader(self) -> DataLoader:
+        return DataLoader(dataset=self.train_dataset, batch_size=self.batch_size, shuffle=False,
+                          num_workers=self.num_workers)
+
+    def val_dataloader(self) -> DataLoader:
+        return DataLoader(dataset=self.valid_dataset, batch_size=self.batch_size, shuffle=False,
+                          num_workers=self.num_workers)
+
+    def test_dataloader(self) -> DataLoader:
+        return DataLoader(dataset=self.test_dataset, batch_size=self.batch_size, shuffle=True,
+                          num_workers=self.num_workers)

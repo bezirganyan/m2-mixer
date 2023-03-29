@@ -3,7 +3,7 @@ train:
   log_interval_steps: 10
   epochs: 120
   optimizer:
-    lr: 5e-4
+    lr: 1e-2
     betas: [0.9, 0.999]
     eps: 1e-8
     weight_decay: 0.0
@@ -12,10 +12,10 @@ train:
   monitor_mode: max
 
 dataset:
-  type: MultiOFFDataModule
+  type: MMHS150DataModule
   params:
-    data_dir: ../data/MultiOFF_Dataset
-    task_name: overall_sentiment
+    data_dir: ../data/MMHS150
+    task: binary
     batch_size: 32
     num_workers: -1
     max_seq_len: &max_seq_len 1024
@@ -35,7 +35,7 @@ dataset:
       vocab_path: vocab.npy
 
 model:
-  type: MultiOFFMixerMultiLoss
+  type: MMHS150MultiLoss
   dropout: 0.3
   modalities:
     classification:
