@@ -2,6 +2,7 @@ import json
 import os
 from typing import List
 
+import gensim
 import numpy as np
 import pandas as pd
 from PIL import Image
@@ -19,8 +20,9 @@ from utils.projection import Projection
 class MMHS150DataModule(pl.LightningDataModule):
 
     def __init__(self, data_dir: str, batch_size: int, num_workers: int, vocab: DictConfig, projection: DictConfig,
-                 max_seq_len: int, task: str, **kwargs):
+                 max_seq_len: int, task: str, word_proj='pnlp', **kwargs):
         super().__init__(**kwargs)
+        self.word_proj = word_proj
         self.max_seq_len = max_seq_len
         self.data_dir = data_dir
         self.batch_size = batch_size
@@ -50,15 +52,18 @@ class MMHS150DataModule(pl.LightningDataModule):
         self.train_set = MMHS150Dataset(os.path.join(self.data_dir), stage='train', tokenizer=self.tokenizer,
                                          projection=self.projecion, max_seq_len=self.max_seq_len,
                                          transform=train_transforms,
-                                         task=self.task)
+                                         task=self.task,
+                                         word_proj=self.word_proj)
         self.eval_set = MMHS150Dataset(os.path.join(self.data_dir), stage='dev', tokenizer=self.tokenizer,
                                         projection=self.projecion, max_seq_len=self.max_seq_len,
                                         transform=val_test_transforms,
-                                        task=self.task)
+                                        task=self.task,
+                                        word_proj=self.word_proj)
         self.test_set = MMHS150Dataset(os.path.join(self.data_dir), stage='test', tokenizer=self.tokenizer,
                                         projection=self.projecion, max_seq_len=self.max_seq_len,
                                         transform=val_test_transforms,
-                                        task=self.task)
+                                        task=self.task,
+                                        word_proj=self.word_proj)
 
     def train_dataloader(self) -> DataLoader:
         return DataLoader(self.train_set, self.batch_size, shuffle=True,
@@ -75,8 +80,8 @@ class MMHS150DataModule(pl.LightningDataModule):
 
 class MMHS150Dataset(Dataset):
 
-    def __init__(self, root_dir, tokenizer, projection, max_seq_len, feat_dim=100, stage='train', task='binary',
-                 transform=None):
+    def __init__(self, root_dir, tokenizer, projection=None, max_seq_len=None, feat_dim=100, stage='train', task='binary',
+                 transform=None, word_proj='pnlp'):
         """
         Args:
             root_dir (string): Directory where data is.
@@ -96,12 +101,16 @@ class MMHS150Dataset(Dataset):
         self.root_dir = root_dir
         self.stage = stage
         self.tokenizer = tokenizer
-        self.projection = projection
         self.max_seq_len = max_seq_len
+        self.word_proj = word_proj
+        if self.word_proj == 'pnlp':
+            self.projection = projection
+        elif self.word_proj == 'word2vec':
+            self.word2vec = gensim.models.KeyedVectors.load_word2vec_format('pretrained/GoogleNews-vectors-negative300.bin', binary=True)
+        else:
+            raise NotImplementedError(f'Word projection {self.word_proj} not implemented')
         with open(os.path.join(self.root_dir, 'MMHS150K_GT.json')) as f:
             self.texts = json.load(f)
-        global fdim
-        fdim = feat_dim
 
     def __len__(self):
         return self.len_data
@@ -116,7 +125,7 @@ class MMHS150Dataset(Dataset):
                 ocr_text = json.load(f)
             ocr_text = ocr_text['img_text']
         else:
-            ocr_text = 'notavailabletext'
+            ocr_text = 'none'
         text = self.texts.get(self.ref[idx], {}).get('tweet_text', 'none')
         label = np.array(self.texts[self.ref[idx]]['labels']).astype(int)
         label = (label > 0).astype(int)
@@ -140,14 +149,32 @@ class MMHS150Dataset(Dataset):
 
         fields = sample['text'].split('\t')
         words = self.get_words(fields)
-        features = self.project_features(words)
-        sample['text'] = features
 
         fields_ocr = sample['ocr'].split('\t')
         words_ocr = self.get_words(fields_ocr)
-        features_ocr = self.project_features(words_ocr)
-        sample['ocr'] = features_ocr
 
+        if self.word_proj == 'pnlp':
+            features_ocr = self.project_features(words_ocr)
+            features = self.project_features(words)
+        else:
+            if (len(words_ocr) == 1) and (words_ocr[0] == 'none'):
+                features_ocr = np.zeros((1, 300), dtype=np.float32)
+                use_features_ocr = 0
+            else:
+                features_ocr = np.stack([self.word2vec[w] for w in words_ocr])
+                use_features_ocr = 1
+            if (len(words) == 1) and (words[0] == 'none'):
+                features = np.zeros((1, 300), dtype=np.float32)
+                use_features = 0
+            else:
+                features = np.stack([self.word2vec[w] for w in words])
+                use_features = 1
+            features = np.pad(features, ((0, self.max_seq_len - features.shape[0]), (0, 0)), 'constant')
+            features_ocr = np.pad(features_ocr, ((0, self.max_seq_len - features_ocr.shape[0]), (0, 0)), 'constant')
+        sample['ocr'] = features_ocr
+        sample['text'] = features
+        sample['use_features'] = use_features
+        sample['use_features_ocr'] = use_features_ocr
         return sample
 
     def project_features(self, words: List[str]) -> np.ndarray:
@@ -163,5 +190,9 @@ class MMHS150Dataset(Dataset):
         return text.replace('<br />', ' ')
 
     def get_words(self, fields: List[str]) -> List[str]:
-        return [w[0] for w in self.tokenizer.pre_tokenizer.pre_tokenize_str(self.normalize(fields[0]))][
-               :self.max_seq_len]
+        words = [w[0] for w in self.tokenizer.pre_tokenizer.pre_tokenize_str(self.normalize(fields[0]))]
+        if self.word_proj == 'word2vec':
+            words = [w for w in words if w in self.word2vec]
+        if len(words) == 0:
+            words = ['none']
+        return words[:self.max_seq_len]
