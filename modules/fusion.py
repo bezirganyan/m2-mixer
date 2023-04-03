@@ -137,7 +137,7 @@ class ConcatFusion:
             if not isinstance(args[0], int):
                 raise ValueError("The dim argument is only used if the first argument is an int.")
             if dim == self.dim:
-                return args[0] * len(args)
+                return sum(args)
             else:
                 return args[0]
         shape = list(args[0])

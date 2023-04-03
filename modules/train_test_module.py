@@ -7,6 +7,7 @@ import torch
 import wandb
 from omegaconf import DictConfig
 import pytorch_lightning as pl
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torchmetrics import Metric
 
 
@@ -127,7 +128,7 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
                 probs=None,
                 y_true=labs.long().cpu().numpy(),
                 preds=preds.long().cpu().numpy(),
-                class_names=range(max(preds.max().item(), labs.max().item()) + 1),
+                class_names=range(max(preds.long().max().item(), labs.max().item()) + 1),
             )})
 
     def test_step(self, batch, batch_idx):
@@ -158,11 +159,17 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
                 class_names=range(max(preds.max().item(), labs.max().item()) + 1),
             )})
 
-    def configure_optimizers(self):
-        optimizer_cfg = self.optimizer_cfg
-        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
-        return optimizer
-
     def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
         results = self.shared_step(batch)
         return results
+
+    def configure_optimizers(self):
+        optimizer_cfg = self.optimizer_cfg
+        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
+        scheduler = ReduceLROnPlateau(optimizer, patience=5, verbose=True)
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": scheduler,
+            "monitor": "val_loss",
+        }

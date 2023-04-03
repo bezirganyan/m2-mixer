@@ -70,7 +70,6 @@ class MMixerBlock(nn.Module):
             FeedForward(hidden_dim, channel_dim, dropout),
         )
 
-
     def forward(self, x):
         x = x + self.token_mix(x)
 
@@ -155,6 +154,30 @@ class MLPMixer(nn.Module):
 
     def forward(self, x):
         x = self.to_patch_embedding(x)
+
+        for mixer_block in self.mixer_blocks:
+            x = mixer_block(x)
+
+        x = self.layer_norm(x)
+        return x
+
+
+class MLPMixerNoPatching(nn.Module):
+    def __init__(self, hidden_dim, num_patch, num_mixers, token_dim, channel_dim, embedding_dim, proj_dim,
+                 dropout=0., **kwargs):
+        super().__init__()
+
+        self.num_patch = num_patch
+        self.proj = nn.Linear(embedding_dim, proj_dim)
+
+        self.mixer_blocks = nn.ModuleList([])
+        for _ in range(num_mixers):
+            self.mixer_blocks.append(MixerBlock(hidden_dim, self.num_patch, token_dim, channel_dim, dropout=dropout))
+
+        self.layer_norm = nn.LayerNorm(hidden_dim)
+
+    def forward(self, x):
+        x = self.proj(x)
 
         for mixer_block in self.mixer_blocks:
             x = mixer_block(x)

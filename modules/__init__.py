@@ -5,6 +5,7 @@ from .gmpl import *
 from .fusion import *
 from .dynamixer import *
 from .classification import *
+from .mlp import *
 
 
 def get_block_by_name(**kwargs):

@@ -10,6 +10,7 @@ from .mmimdb_gmlp import *
 from .mmimdb import *
 from .multioff import *
 from .mmhs150 import *
+from .mimic import *
 
 
 def get_model(model_type: str) -> type[pl.LightningModule]:
