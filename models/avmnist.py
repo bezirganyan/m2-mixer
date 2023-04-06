@@ -84,11 +84,40 @@ class AbstractAVMnistMixer(AbstractTrainTestModule, ABC):
         return CrossEntropyLoss()
 
     def setup_scores(self) -> List[torch.nn.Module]:
-        train_scores = dict(acc=Accuracy(task="multiclass", num_classes=10))
-        val_scores = dict(acc=Accuracy(task="multiclass", num_classes=10))
-        test_scores = dict(acc=Accuracy(task="multiclass", num_classes=10))
+        train_scores = dict(acc=Accuracy(task="multiclass", num_classes=10),
+                            f1m=F1Score(task="multiclass", num_classes=10, average='macro'),
+                            prec_m=Precision(task="multiclass", num_classes=10, average='macro'),
+                            rec_m=Recall(task="multiclass", num_classes=10, average='macro'),
+                            f1mi=F1Score(task="multiclass", num_classes=10, average='micro'),
+                            prec_mi=Precision(task="multiclass", num_classes=10, average='micro'),
+                            rec_mi=Recall(task="multiclass", num_classes=10, average='micro'))
+        val_scores = dict(acc=Accuracy(task="multiclass", num_classes=10),
+                          f1m=F1Score(task="multiclass", num_classes=10, average='macro'),
+                          prec_m=Precision(task="multiclass", num_classes=10, average='macro'),
+                          rec_m=Recall(task="multiclass", num_classes=10, average='macro'),
+                          f1mi=F1Score(task="multiclass", num_classes=10, average='micro'),
+                          prec_mi=Precision(task="multiclass", num_classes=10, average='micro'),
+                          rec_mi=Recall(task="multiclass", num_classes=10, average='micro'))
+        test_scores = dict(acc=Accuracy(task="multiclass", num_classes=10),
+                           f1m=F1Score(task="multiclass", num_classes=10, average='macro'),
+                           prec_m=Precision(task="multiclass", num_classes=10, average='macro'),
+                           rec_m=Recall(task="multiclass", num_classes=10, average='macro'),
+                           f1mi=F1Score(task="multiclass", num_classes=10, average='micro'),
+                           prec_mi=Precision(task="multiclass", num_classes=10, average='micro'),
+                           rec_mi=Recall(task="multiclass", num_classes=10, average='micro'))
 
         return [train_scores, val_scores, test_scores]
+
+    def configure_optimizers(self):
+        optimizer_cfg = self.optimizer_cfg
+        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
+        scheduler = ReduceLROnPlateau(optimizer, patience=5, verbose=True)
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": scheduler,
+            "monitor": "val_loss",
+        }
 
 
 class AVMnistImageMixer(AbstractAVMnistMixer):
@@ -130,13 +159,13 @@ class AVMnistMixer(AbstractAVMnistMixer):
         audio_config = model_cfg.modalities.audio
         multimodal_config = model_cfg.modalities.multimodal
         dropout = model_cfg.get('dropout', 0.0)
-        self.image_mixer = MLPMixer(**image_config, dropout=dropout)
-        self.audio_mixer = MLPMixer(**audio_config, dropout=dropout)
-        # num_patches = self.image_mixer.num_patch + self.audio_mixer.num_patch
-        num_patches = self.image_mixer.num_patch
-        self.fusion_mixer = FusionMixer(**multimodal_config, num_patches=num_patches, dropout=dropout)
-        self.classifier = torch.nn.Linear(model_cfg.modalities.image.hidden_dim,
-                                          model_cfg.modalities.classification.num_classes)
+        self.image_mixer = modules.get_block_by_name(**image_config, dropout=dropout)
+        self.audio_mixer = modules.get_block_by_name(**audio_config, dropout=dropout)
+        self.fusion_function = modules.get_fusion_by_name(**model_cfg.modalities.multimodal)
+        num_patches = self.fusion_function.get_output_shape(self.image_mixer.num_patch, self.audio_mixer.num_patch,
+                                                            dim=1)
+        self.fusion_mixer = modules.get_block_by_name(**multimodal_config, num_patches=num_patches, dropout=dropout)
+        self.classifier = modules.get_classifier_by_name(**model_cfg.modalities.classification)
 
     def get_logits(self, batch):
         image = batch['image']
@@ -149,9 +178,18 @@ class AVMnistMixer(AbstractAVMnistMixer):
 
         image_logits = self.image_mixer(image)
         audio_logits = self.audio_mixer(audio)
-        # logits = self.fusion_mixer(torch.cat([image_logits, audio_logits], dim=1))
-        logits = self.fusion_mixer(torch.maximum(image_logits, audio_logits))
-        logits = self.classifier(logits.mean(dim=1))
+
+        # fuse modalities
+        fused_moalities = self.fusion_function(image_logits, audio_logits)
+        logits = self.fusion_mixer(fused_moalities)
+
+        # logits = logits.reshape(logits.shape[0], -1, logits.shape[-1])
+        audio_logits = audio_logits.reshape(audio_logits.shape[0], -1, audio_logits.shape[-1])
+        image_logits = image_logits.reshape(image_logits.shape[0], -1, image_logits.shape[-1])
+
+        # get logits for each modality
+        logits = self.classifier(logits)
+
         return logits
 
 
@@ -432,7 +470,6 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
                     fusion_correct=fusion_correct, image_correct=image_correct, audio_correct=audio_correct)
 
 
-
 class AVMnistMixerMultiLossUQ(AVMnistMixerMultiLoss):
     def __init__(self, model_cfg, *args, **kwargs):
         super().__init__(model_cfg, *args, **kwargs)
@@ -521,9 +558,9 @@ class AVMnistMixerMultiLossUQ(AVMnistMixerMultiLoss):
 
         pred_combined = preds * (((uncertainty < uncertainty_image) & (uncertainty < uncertainty_audio))).long() \
                         + preds_image * (
-                        ((uncertainty_image < uncertainty) & (uncertainty_image < uncertainty_audio))).long() \
+                            ((uncertainty_image < uncertainty) & (uncertainty_image < uncertainty_audio))).long() \
                         + preds_audio * (
-                        ((uncertainty_audio < uncertainty) & (uncertainty_audio < uncertainty_image))).long()
+                            ((uncertainty_audio < uncertainty) & (uncertainty_audio < uncertainty_image))).long()
 
         return {
             'preds': pred_combined,
