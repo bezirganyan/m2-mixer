@@ -95,7 +95,7 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
         if self.val_scores is not None:
             for metric in self.val_scores:
                 self.val_scores[metric].to(self.device)
-        results = self.shared_step(batch)
+        results = self.shared_step(batch, mode='val')
         self.log('val_loss', results['loss'], on_step=False, on_epoch=True, prog_bar=True, logger=True)
         if self.val_scores is not None:
             for metric in self.val_scores:
@@ -136,7 +136,7 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
         if self.test_scores is not None:
             for metric in self.test_scores:
                 self.test_scores[metric].to(self.device)
-        results = self.shared_step(batch)
+        results = self.shared_step(batch, mode='test')
         self.log('test_loss', results['loss'], on_step=False, on_epoch=True, prog_bar=True, logger=True)
         if self.test_scores is not None:
             for metric in self.test_scores:

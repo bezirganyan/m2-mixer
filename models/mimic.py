@@ -1,3 +1,4 @@
+from copy import deepcopy
 from os import path
 from typing import List, Optional, Any
 
@@ -10,16 +11,18 @@ from softadapt import LossWeightedSoftAdapt
 from torch import nn
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.utils.data import Subset, DataLoader
 from torchmetrics import F1Score, Accuracy, Precision, Recall
 
 import modules
+from modules.gradblend import GradBlend
 from modules.train_test_module import AbstractTrainTestModule
 
 
-class MultiOFFMixerMultiLoss(AbstractTrainTestModule):
+class MimicMixerMultiLoss(AbstractTrainTestModule):
     def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
         self.num_classes = model_cfg.modalities.classification.get('num_classes', 3)
-        super(MultiOFFMixerMultiLoss, self).__init__(optimizer_cfg, log_confusion_matrix=True, **kwargs)
+        super(MimicMixerMultiLoss, self).__init__(optimizer_cfg, log_confusion_matrix=True, **kwargs)
         self.modalities_freezed = False
         self.optimizer_cfg = optimizer_cfg
         self.checkpoint_path = None
@@ -42,12 +45,9 @@ class MultiOFFMixerMultiLoss(AbstractTrainTestModule):
         self.classifier_time = torch.nn.Linear(model_cfg.modalities.time.hidden_dim,
                                                model_cfg.modalities.classification.num_classes)
         self.classifier_fusion = modules.get_classifier_by_name(**model_cfg.modalities.classification)
-        # weight = torch.tensor([1.32156605, 286.73626374, 74.12784091, 99.59160305,
-        #                        9.00068989, 9.50564663])
-        weight = torch.tensor([1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
-        self.static_criterion = CrossEntropyLoss(weight=weight)
-        self.time_criterion = CrossEntropyLoss(weight=weight)
-        self.fusion_criterion = CrossEntropyLoss(weight=weight)
+        self.static_criterion = CrossEntropyLoss()
+        self.time_criterion = CrossEntropyLoss()
+        self.fusion_criterion = CrossEntropyLoss()
         self.fusion_loss_weight = model_cfg.get('fusion_loss_weight', 1.0 / 3)
         self.fusion_loss_change = model_cfg.get('fusion_loss_change', 0)
         self.use_softadapt = model_cfg.get('use_softadapt', False)
@@ -58,8 +58,31 @@ class MultiOFFMixerMultiLoss(AbstractTrainTestModule):
             self.update_loss_weights_per_epoch = model_cfg.get('update_loss_weights_per_epoch', 6)
             self.softadapt = LossWeightedSoftAdapt(beta=-0.1, accuracy_order=self.update_loss_weights_per_epoch - 1)
         # self.init_weights()
+        self.use_gradblend = model_cfg.get('gradblend', False)
+        if self.use_gradblend:
+            self.gb_update_freq = model_cfg.get('gb_update_freq', 5)
+            self.gb_weights = None
+            self.gradblend = None
+            self.gb_train_loader = None
+            self.gb_val_loader = None
 
-    def shared_step(self, batch, **kwargs):
+    def on_train_epoch_start(self) -> None:
+        if self.use_gradblend and self.current_epoch % self.gb_update_freq == 0:
+            encoders = [deepcopy(self.static_extractor), deepcopy(self.time_mixer)]
+            heads = [deepcopy(self.classifier_static), deepcopy(self.classifier_time)]
+            if (self.gb_val_loader is None) or (self.gb_train_loader is None):
+                ds = self.trainer.train_dataloader.dataset.datasets
+                ds_train = Subset(ds, range(len(ds) // 4))
+                ds_val = Subset(ds, range(len(ds) // 4, len(ds) // 2))
+                bs = self.trainer.train_dataloader.loaders.batch_size
+                self.gb_train_loader = DataLoader(ds_train, batch_size=bs, shuffle=True)
+                self.gb_val_loader = DataLoader(ds_val, batch_size=bs, shuffle=True)
+            self.gradblend = GradBlend(self, encoders, heads, deepcopy(self.fusion_mixer), deepcopy(self.classifier_fusion),
+                                       nn.CrossEntropyLoss, self.gb_train_loader, self.gb_val_loader)
+            self.gb_weights = self.gradblend.get_weights()
+            print("GradBlend weights:", self.gb_weights)
+
+    def shared_step(self, batch, mode='train', **kwargs):
         # Load data
         static, time, labels = batch
 
@@ -82,7 +105,14 @@ class MultiOFFMixerMultiLoss(AbstractTrainTestModule):
         loss_time = self.time_criterion(time_logits, labels)
 
         ow = (1 - self.fusion_loss_weight) / 2
-        loss = self.fusion_loss_weight * loss_fusion + ow * loss_static + ow * loss_time
+        if self.use_gradblend:
+            if self.gb_weights is None:
+                loss = self.fusion_loss_weight * loss_fusion + ow * loss_static + ow * loss_time
+            else:
+                loss = self.gb_weights[2] * loss_fusion + self.gb_weights[0] * loss_static + self.gb_weights[
+                    1] * loss_time
+        else:
+            loss = self.fusion_loss_weight * loss_fusion + ow * loss_static + ow * loss_time
 
         # get predictions
         preds = torch.softmax(logits, dim=1).argmax(dim=1)
@@ -116,17 +146,17 @@ class MultiOFFMixerMultiLoss(AbstractTrainTestModule):
 
     def setup_scores(self) -> List[torch.nn.Module]:
         train_scores = dict(f1_micro=F1Score(task="multiclass", num_classes=self.num_classes, average="micro"),
-                            accuracy_micro=Accuracy(task="multiclass", num_classes=self.num_classes, average="micro"),
+                            acc=Accuracy(task="multiclass", num_classes=self.num_classes, average="micro"),
                             precision_micro=Precision(task="multiclass", num_classes=self.num_classes, average="micro"),
                             recall_micro=Recall(task="multiclass", num_classes=self.num_classes, average="micro"))
 
         val_scores = dict(f1_micro=F1Score(task="multiclass", num_classes=self.num_classes, average="micro"),
-                          accuracy_micro=Accuracy(task="multiclass", num_classes=self.num_classes, average="micro"),
+                          acc=Accuracy(task="multiclass", num_classes=self.num_classes, average="micro"),
                           precision_micro=Precision(task="multiclass", num_classes=self.num_classes, average="micro"),
                           recall_micro=Recall(task="multiclass", num_classes=self.num_classes, average="micro"))
 
         test_scores = dict(f1_micro=F1Score(task="multiclass", num_classes=self.num_classes, average="micro"),
-                           accuracy_micro=Accuracy(task="multiclass", num_classes=self.num_classes, average="micro"),
+                           acc=Accuracy(task="multiclass", num_classes=self.num_classes, average="micro"),
                            precision_micro=Precision(task="multiclass", num_classes=self.num_classes, average="micro"),
                            recall_micro=Recall(task="multiclass", num_classes=self.num_classes, average="micro"))
 
@@ -157,3 +187,18 @@ class MultiOFFMixerMultiLoss(AbstractTrainTestModule):
             elif isinstance(m, nn.Linear):
                 nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.constant_(m.bias, 0)
+
+    def configure_optimizers(self):
+        optimizer_cfg = self.optimizer_cfg
+        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
+        scheduler = ReduceLROnPlateau(optimizer, patience=5, verbose=True)
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": scheduler,
+            "monitor": "val_loss",
+        } if not self.gradblend else {
+            "optimizer": optimizer,
+            "lr_scheduler": scheduler,
+            "monitor": "val_acc",
+        }
