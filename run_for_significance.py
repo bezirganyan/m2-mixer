@@ -18,6 +18,8 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
     parser.add_argument('-n', '--name', type=str)
     parser.add_argument('-p', '--ckpt', type=str)
     parser.add_argument('-r', '--runs', type=int, default=10)
+    parser.add_argument('-m', '--mode', type=str, default='train')
+    parser.add_argument('--project', type=str, default='MMixer Significance Test')
     parser.add_argument('--disable-wandb', action='store_true', default=False)
     args, unknown = parser.parse_known_args()
     return args, unknown
@@ -70,12 +72,13 @@ if __name__ == '__main__':
         data_module = data_module(**dataset_cfg.params)
 
         if args.disable_wandb:
-            wandb.init(project=f'MMixer Significance Test', name=f'{args.name} - {r}', config=todict(cfg), mode='disabled')
+            wandb.init(project=args.project, name=f'{args.name} - {r}', config=todict(cfg), mode='disabled')
         else:
-            wandb.init(project=f'MMixer Significance Test', name=f'{args.name} - {r}', config=todict(cfg))
+            wandb.init(project=args.project, name=f'{args.name} - {r}', config=todict(cfg))
         wandb.config.update({"run_version": trainer.logger.version})
         wandb.watch(train_module)
-        trainer.fit(train_module, data_module)
+        if args.mode == 'train':
+            trainer.fit(train_module, data_module)
         trainer.test(train_module, data_module, ckpt_path='best')
         score = trainer.callback_metrics['test_acc']
         scores.append(score)
