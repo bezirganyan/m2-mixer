@@ -1,13 +1,13 @@
 train:
   tensorboard_path: ./logs/
   log_interval_steps: 10
-  epochs: 120
+  epochs: 300
   optimizer:
     lr: 1e-2
     weight_decay: 0.0
   seed: 42
-  monitor: val_acc
-  monitor_mode: max
+  monitor: val_loss_fusion
+  monitor_mode: min
 
 dataset:
   type: MIMICDataModule
@@ -15,40 +15,36 @@ dataset:
     data_dir: ../data/mimic
     task: -1
     batch_size: 128
-    num_workers: -1
+    num_workers: 0
 
 model:
-  type: MimicMixerMultiLoss
-  dropout: 0.3
-##  fusion_loss_weight: 0.8
+  type: MimicRecurrent
+  dropout: 0.1
+#  fusion_loss_weight: 0.1
 #  fusion_loss_change: 0.05
+#  loss_change_epoch: 10
   gradblend: True
   modalities:
     classification:
       num_classes: 6
       classifier: StandardClassifier
-      input_shape: [16, 1024, 64]
+      input_shape: [16, 1024, 40]
     time:
-      block_type: MLPMixerNoPatching
-      in_channels: 1
-      embedding_dim: 12
-      proj_dim: 64
-      hidden_dim: 64
-      num_patch: 24
-      token_dim: 16
-      channel_dim: 64
-      num_mixers: 1
+      block_type: GRU
+      input_dim: 12
+      hidden_dim: 30
+      flatten: True
+      batch_first: True
     static:
       block_type: MLP
       in_channels: 1
       input_dim: 5
-      hidden_dim: 64
-      num_blocks: 2
-      output_dim: 64
+      hidden_dim: 10
+      num_blocks: 1
+      output_dim: 10
     multimodal:
-      block_type: FusionMixer
+      block_type: MLP
       fusion_function: ConcatFusion
-      hidden_dim: 64
-      token_dim: 8
-      channel_dim: 64
-      num_mixers: 1
+      input_dim: 730
+      hidden_dim: 40
+      num_blocks: 1

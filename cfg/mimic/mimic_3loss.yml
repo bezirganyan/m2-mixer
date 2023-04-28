@@ -1,9 +1,9 @@
 train:
   tensorboard_path: ./logs/
   log_interval_steps: 10
-  epochs: 120
+  epochs: 300
   optimizer:
-    lr: 1e-3
+    lr: 1e-2
     weight_decay: 0.0
   seed: 42
   monitor: val_loss
@@ -15,13 +15,15 @@ dataset:
     data_dir: ../data/mimic
     task: -1
     batch_size: 128
-    num_workers: -1
+    num_workers: 0
 
 model:
-  type: MultiOFFMixerMultiLoss
+  type: MimicMixerMultiLoss
   dropout: 0.3
-  fusion_loss_weight: 0.8
-  fusion_loss_change: 0.0
+#  fusion_loss_weight: 0.8
+  fusion_loss_change: 0.05
+#  loss_change_epoch: 10
+  gradblend: False
   modalities:
     classification:
       num_classes: 6
