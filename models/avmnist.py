@@ -187,6 +187,7 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         self.fusion_criterion = CrossEntropyLoss()
         self.fusion_loss_weight = model_cfg.get('fusion_loss_weight', 1.0 / 3)
         self.fusion_loss_change = model_cfg.get('fusion_loss_change', 0)
+        self.loss_change_epoch = model_cfg.get('loss_change_epoch', 0)
         self.use_softadapt = model_cfg.get('use_softadapt', False)
         if self.use_softadapt:
             self.image_criterion_history = list()
@@ -287,7 +288,8 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
 
     def validation_epoch_end(self, outputs) -> None:
         super().validation_epoch_end(outputs)
-        self.fusion_loss_weight = min(1, self.fusion_loss_weight + self.fusion_loss_change)
+        if self.current_epoch >= self.loss_change_epoch:
+            self.fusion_loss_weight = min(1, self.fusion_loss_weight + self.fusion_loss_change)
         if self.use_softadapt:
             self.image_criterion_history.append(torch.stack([x['loss_image'] for x in outputs]).mean().item())
             self.audio_criterion_history.append(torch.stack([x['loss_audio'] for x in outputs]).mean().item())
