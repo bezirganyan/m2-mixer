@@ -33,9 +33,8 @@ class MIMICDataModule(pl.LightningDataModule):
         self.le = None
 
     def setup(self, stage=None):
-        f = open(os.path.join(self.data_dir, self.filename), 'rb')
-        datafile = pickle.load(f)
-        f.close()
+        with open(os.path.join(self.data_dir, self.filename), 'rb') as f:
+            datafile = pickle.load(f)
         X_t = datafile['ep_tdata']
         X_s = datafile['adm_features_all']
 
@@ -58,7 +57,7 @@ class MIMICDataModule(pl.LightningDataModule):
             y = datafile['adm_labels_all'][:, 1]
             admlbl = datafile['adm_labels_all']
             le = len(y)
-            for i in range(0, le):
+            for i in range(le):
                 if admlbl[i][1] > 0:
                     y[i] = 1
                 elif admlbl[i][2] > 0:
@@ -81,16 +80,22 @@ class MIMICDataModule(pl.LightningDataModule):
         random.shuffle(self.datasets)
 
     def train_dataloader(self):
-        trains = DataLoader(self.datasets[self.le // 5:], shuffle=self.train_shuffle,
-                            num_workers=self.num_workers, batch_size=self.batch_size)
-
-        return trains
+        return DataLoader(
+            self.datasets[self.le // 5:],
+            shuffle=self.train_shuffle,
+            num_workers=self.num_workers,
+            batch_size=self.batch_size,
+            pin_memory=True,
+        )
 
     def val_dataloader(self):
-        valids = DataLoader(self.datasets[0:self.le // 10], shuffle=False,
-                            num_workers=self.num_workers, batch_size=self.batch_size)
-
-        return valids
+        return DataLoader(
+            self.datasets[: self.le // 10],
+            shuffle=False,
+            num_workers=self.num_workers,
+            batch_size=self.batch_size,
+            pin_memory=True,
+        )
 
     def test_dataloader(self):
         dataset_robust = copy.deepcopy(self.datasets[self.le // 10:self.le // 5])
@@ -101,7 +106,13 @@ class MIMICDataModule(pl.LightningDataModule):
         X_t_robust = [dataset_robust[i][1]
                       for i in range(len(self.datasets[self.le // 10:self.le // 5]))]
         y_robust = [dataset_robust[i][2] for i in range(len(self.datasets[self.le // 10:self.le // 5]))]
-        tests = DataLoader([(X_s_robust[i], X_t_robust[i], y_robust[i]) for i in range(
-            len(y_robust))], shuffle=False, num_workers=self.num_workers, batch_size=self.batch_size)
-
-        return tests
+        return DataLoader(
+            [
+                (X_s_robust[i], X_t_robust[i], y_robust[i])
+                for i in range(len(y_robust))
+            ],
+            shuffle=False,
+            num_workers=self.num_workers,
+            batch_size=self.batch_size,
+            pin_memory=True,
+        )

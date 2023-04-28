@@ -6,6 +6,7 @@ from .fusion import *
 from .dynamixer import *
 from .classification import *
 from .mlp import *
+from .recurrent import *
 
 
 def get_block_by_name(**kwargs):

@@ -14,7 +14,8 @@ class MultiModalEncoder(nn.Module):
 
     def forward(self, x):
         encs = [e(x[i]) for i, e in enumerate(self.unimodal_encoders)]
-        encs = [e.unsqueeze(1) if len(e.shape) < 3 else e for e in encs]
+        max_dim = max([len(e.shape) for e in encs])
+        encs = [e.unsqueeze(1) if len(e.shape) < max_dim else e for e in encs]
         cat = torch.cat(encs, dim=1)
         out = self.multimodal_encoder(cat)
         return out
@@ -23,7 +24,7 @@ class MultiModalEncoder(nn.Module):
 class GradBlend:
     def __init__(self, model, unimodal_encoders, unimodal_heads, multimodal_encoder, multimodal_head,
                  loss, train_dataloader, val_dataloader,
-                 label_name='labels', epochs=10, loss_args=None):
+                 label_name='labels', epochs=20, loss_args=None):
         if loss_args is None:
             loss_args = {}
         self.val_dataloader = val_dataloader
