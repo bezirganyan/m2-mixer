@@ -1,18 +1,22 @@
 from os import path
-from typing import List, Optional, Any
+from typing import Any, List, Optional
 
 import numpy as np
-import wandb
 import torch
+import wandb
 from omegaconf import DictConfig
-from softadapt import LossWeightedSoftAdapt
 from torch import nn
-from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss
-from torchmetrics import F1Score, Accuracy
+from torch.nn import CrossEntropyLoss
+from torchmetrics import F1Score
 
 import modules
 from modules.train_test_module import AbstractTrainTestModule
 
+try:
+    from softadapt import LossWeightedSoftAdapt
+except ModuleNotFoundError:
+    print('Warning: Could not import softadapt. LossWeightedSoftAdapt will not be available.')
+    LossWeightedSoftAdapt = None
 
 class MemotionMixerMultiLoss(AbstractTrainTestModule):
     def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
@@ -47,12 +51,16 @@ class MemotionMixerMultiLoss(AbstractTrainTestModule):
 
         self.use_softadapt = model_cfg.get('use_softadapt', False)
         if self.use_softadapt:
-            self.image_criterion_history = list()
-            self.text_criterion_history = list()
-            self.fusion_criterion_history = list()
-            self.loss_weights = torch.tensor([1.0 / 3, 1.0 / 3, 1.0 / 3], device=self.device)
-            self.update_loss_weights_per_epoch = model_cfg.get('update_loss_weights_per_epoch', 6)
-            self.softadapt = LossWeightedSoftAdapt(beta=-0.1, accuracy_order=self.update_loss_weights_per_epoch - 1)
+            if LossWeightedSoftAdapt is None:
+                self.use_softadapt = False
+                print('SoftAdapt is not installed! Hence, will not be used!')
+            else:
+                self.image_criterion_history = []
+                self.text_criterion_history = []
+                self.fusion_criterion_history = []
+                self.loss_weights = torch.tensor([1.0 / 3, 1.0 / 3, 1.0 / 3], device=self.device)
+                self.update_loss_weights_per_epoch = model_cfg.get('update_loss_weights_per_epoch', 6)
+                self.softadapt = LossWeightedSoftAdapt(beta=-0.1, accuracy_order=self.update_loss_weights_per_epoch - 1)
 
     def shared_step(self, batch, **kwargs):
         # Load data
@@ -63,18 +71,8 @@ class MemotionMixerMultiLoss(AbstractTrainTestModule):
 
         if kwargs.get('mode', None) == 'train':
             if self.freeze_modalities_on_epoch is not None and (self.current_epoch == self.freeze_modalities_on_epoch) \
-                    and not self.modalities_freezed:
-                print('Freezing modalities')
-                for param in self.image_mixer.parameters():
-                    param.requires_grad = False
-                for param in self.text_mixer.parameters():
-                    param.requires_grad = False
-                for param in self.classifier_image.parameters():
-                    param.requires_grad = False
-                for param in self.classifier_text.parameters():
-                    param.requires_grad = False
-                self.modalities_freezed = True
-
+                        and not self.modalities_freezed:
+                self._freeze_modalities()
             if self.random_modality_muting_on_freeze and (self.current_epoch >= self.freeze_modalities_on_epoch):
                 self.mute = np.random.choice(['image', 'text', 'multimodal'], p=[self.muting_probs['image'],
                                                                                   self.muting_probs['text'],
@@ -135,6 +133,18 @@ class MemotionMixerMultiLoss(AbstractTrainTestModule):
             'logits': logits
         }
 
+    def _freeze_modalities(self):
+        print('Freezing modalities')
+        for param in self.image_mixer.parameters():
+            param.requires_grad = False
+        for param in self.text_mixer.parameters():
+            param.requires_grad = False
+        for param in self.classifier_image.parameters():
+            param.requires_grad = False
+        for param in self.classifier_text.parameters():
+            param.requires_grad = False
+        self.modalities_freezed = True
+
     def training_epoch_end(self, outputs) -> None:
         super().training_epoch_end(outputs)
         wandb.log({'train_loss_image': torch.stack([x['loss_image'] for x in outputs]).mean().item()})
@@ -157,15 +167,19 @@ class MemotionMixerMultiLoss(AbstractTrainTestModule):
             self.log('val_loss_fusion', self.fusion_criterion_history[-1])
 
             if self.current_epoch != 0 and (self.current_epoch % self.update_loss_weights_per_epoch == 0):
-                print('[!] Updating loss weights')
-                self.loss_weights = self.softadapt.get_component_weights(torch.tensor(self.image_criterion_history),
-                                                                         torch.tensor(self.text_criterion_history),
-                                                                         torch.tensor(self.fusion_criterion_history),
-                                                                         verbose=True)
-                print(f'[!] loss weights: {self.loss_weights}')
-                self.image_criterion_history = list()
-                self.text_criterion_history = list()
-                self.fusion_criterion_history = list()
+                self._update_softadapt_weights()
+
+    # TODO Rename this here and in `validation_epoch_end`
+    def _update_softadapt_weights(self):
+        print('[!] Updating loss weights')
+        self.loss_weights = self.softadapt.get_component_weights(torch.tensor(self.image_criterion_history),
+                                                                 torch.tensor(self.text_criterion_history),
+                                                                 torch.tensor(self.fusion_criterion_history),
+                                                                 verbose=True)
+        print(f'[!] loss weights: {self.loss_weights}')
+        self.image_criterion_history = []
+        self.text_criterion_history = []
+        self.fusion_criterion_history = []
 
     def setup_criterion(self) -> torch.nn.Module:
         return None
@@ -190,9 +204,18 @@ class MemotionMixerMultiLoss(AbstractTrainTestModule):
         if self.checkpoint_path is None:
             self.checkpoint_path = f'{self.logger.save_dir}/{self.logger.name}/version_{self.logger.version}/checkpoints/'
         save_path = path.dirname(self.checkpoint_path)
-        torch.save(dict(preds=preds, preds_image=preds_image, preds_text=preds_text, labels=labels,
-                        image_logits=image_logits, text_logits=text_logits, logits=logits),
-                   save_path + '/test_preds.pt')
+        torch.save(
+            dict(
+                preds=preds,
+                preds_image=preds_image,
+                preds_text=preds_text,
+                labels=labels,
+                image_logits=image_logits,
+                text_logits=text_logits,
+                logits=logits,
+            ),
+            f'{save_path}/test_preds.pt',
+        )
         print(f'[!] Saved test predictions to {save_path}/test_preds.pt')
 
     @classmethod

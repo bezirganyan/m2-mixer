@@ -1,13 +1,15 @@
 from abc import ABC, abstractmethod
+from copy import deepcopy
 from os import path
 
 import numpy as np
 import wandb
 from omegaconf import DictConfig
-from softadapt import LossWeightedSoftAdapt
 from torch import nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.utils.data import DataLoader, Subset
 
+from modules.gradblend import GradBlend
 from modules.losses import EDLMSELoss
 from modules.train_test_module import AbstractTrainTestModule
 from modules.mixer import MLPMixer
@@ -18,6 +20,11 @@ from typing import List, Any, Optional
 from torch.nn import CrossEntropyLoss
 from torchmetrics import Accuracy, F1Score, Precision, Recall
 import modules
+try:
+    from softadapt import LossWeightedSoftAdapt
+except ModuleNotFoundError:
+    print('Warning: Could not import softadapt. LossWeightedSoftAdapt will not be available.')
+    LossWeightedSoftAdapt = None
 
 
 class AbstractAVMnistMixer(AbstractTrainTestModule, ABC):
@@ -161,6 +168,7 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         super(AVMnistMixerMultiLoss, self).__init__(optimizer_cfg, log_confusion_matrix=True, **kwargs)
         self.modalities_freezed = False
         self.optimizer_cfg = optimizer_cfg
+        self.scheduler_patience = optimizer_cfg.pop('scheduler_patience', 5)
         self.checkpoint_path = None
         self.mute = model_cfg.get('mute', None)
         self.freeze_modalities_on_epoch = model_cfg.get('freeze_modalities_on_epoch', None)
@@ -190,12 +198,40 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         self.loss_change_epoch = model_cfg.get('loss_change_epoch', 0)
         self.use_softadapt = model_cfg.get('use_softadapt', False)
         if self.use_softadapt:
-            self.image_criterion_history = list()
-            self.audio_criterion_history = list()
-            self.fusion_criterion_history = list()
-            self.loss_weights = torch.tensor([1.0 / 3, 1.0 / 3, 1.0 / 3], device=self.device)
-            self.update_loss_weights_per_epoch = model_cfg.get('update_loss_weights_per_epoch', 6)
-            self.softadapt = LossWeightedSoftAdapt(beta=-0.1, accuracy_order=self.update_loss_weights_per_epoch - 1)
+            if LossWeightedSoftAdapt is None:
+                print('SoftAdapt is not installed! Hence, will not be used!')
+                self.use_softadapt = False
+            else:
+                self.image_criterion_history = []
+                self.audio_criterion_history = []
+                self.fusion_criterion_history = []
+                self.loss_weights = torch.tensor([1.0 / 3, 1.0 / 3, 1.0 / 3], device=self.device)
+                self.update_loss_weights_per_epoch = model_cfg.get('update_loss_weights_per_epoch', 6)
+                self.softadapt = LossWeightedSoftAdapt(beta=-0.1, accuracy_order=self.update_loss_weights_per_epoch - 1)
+        self.use_gradblend = model_cfg.get('gradblend', False)
+        if self.use_gradblend:
+            self.gb_update_freq = model_cfg.get('gb_update_freq', 20)
+            self.gb_weights = None
+            self.gradblend = None
+            self.gb_train_loader = None
+            self.gb_val_loader = None
+
+    def on_train_epoch_start(self) -> None:
+        if self.use_gradblend and self.current_epoch % self.gb_update_freq == 0:
+            encoders = [deepcopy(self.audio_mixer), deepcopy(self.image_mixer)]
+            heads = [deepcopy(self.classifier_audio), deepcopy(self.classifier_image)]
+            if (self.gb_val_loader is None) or (self.gb_train_loader is None):
+                ds = self.trainer.train_dataloader.dataset.datasets
+                ds_train = Subset(ds, range(int(len(ds) * 0.1), len(ds)))
+                ds_val = Subset(ds, range(int(len(ds) * 0.1)))
+                bs = self.trainer.train_dataloader.loaders.batch_size
+                self.gb_train_loader = DataLoader(ds_train, batch_size=bs, shuffle=True)
+                self.gb_val_loader = DataLoader(ds_val, batch_size=bs, shuffle=True)
+            self.gradblend = GradBlend(self, encoders, heads, deepcopy(self.fusion_mixer),
+                                       deepcopy(self.classifier_fusion),
+                                       nn.CrossEntropyLoss, self.gb_train_loader, self.gb_val_loader)
+            self.gb_weights = self.gradblend.get_weights()
+            print("GradBlend weights:", self.gb_weights)
 
     def shared_step(self, batch, **kwargs):
         # Load data
@@ -206,18 +242,8 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
 
         if kwargs.get('mode', None) == 'train':
             if self.freeze_modalities_on_epoch is not None and (self.current_epoch == self.freeze_modalities_on_epoch) \
-                    and not self.modalities_freezed:
-                print('Freezing modalities')
-                for param in self.image_mixer.parameters():
-                    param.requires_grad = False
-                for param in self.audio_mixer.parameters():
-                    param.requires_grad = False
-                for param in self.classifier_image.parameters():
-                    param.requires_grad = False
-                for param in self.classifier_audio.parameters():
-                    param.requires_grad = False
-                self.modalities_freezed = True
-
+                        and not self.modalities_freezed:
+                self._freeze_modalities()
             if self.random_modality_muting_on_freeze and (self.current_epoch >= self.freeze_modalities_on_epoch):
                 self.mute = np.random.choice(['image', 'audio', 'multimodal'], p=[self.muting_probs['image'],
                                                                                   self.muting_probs['audio'],
@@ -254,6 +280,12 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         if self.use_softadapt:
             loss = self.loss_weights[0] * loss_image + self.loss_weights[1] * loss_audio + self.loss_weights[
                 2] * loss_fusion
+        elif (
+            self.use_gradblend
+            and self.gb_weights is not None
+        ):
+            loss = self.gb_weights[2] * loss_fusion + self.gb_weights[1] * loss_image + self.gb_weights[
+                0] * loss_audio
         else:
             ow = (1 - self.fusion_loss_weight) / 2
             loss = (self.fusion_loss_weight * loss_fusion + ow * loss_image + ow * loss_audio) * 3
@@ -279,6 +311,18 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
             'logits': logits
         }
 
+    def _freeze_modalities(self):
+        print('Freezing modalities')
+        for param in self.image_mixer.parameters():
+            param.requires_grad = False
+        for param in self.audio_mixer.parameters():
+            param.requires_grad = False
+        for param in self.classifier_image.parameters():
+            param.requires_grad = False
+        for param in self.classifier_audio.parameters():
+            param.requires_grad = False
+        self.modalities_freezed = True
+
     def training_epoch_end(self, outputs) -> None:
         super().training_epoch_end(outputs)
         wandb.log({'train_loss_image': torch.stack([x['loss_image'] for x in outputs]).mean().item()})
@@ -288,6 +332,9 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
 
     def validation_epoch_end(self, outputs) -> None:
         super().validation_epoch_end(outputs)
+        val_loss_fusion = torch.stack([x['loss_fusion'] for x in outputs]).mean().item()
+        self.log('val_loss_fusion', val_loss_fusion)
+        wandb.log({'val_loss_fusion': val_loss_fusion})
         if self.current_epoch >= self.loss_change_epoch:
             self.fusion_loss_weight = min(1, self.fusion_loss_weight + self.fusion_loss_change)
         if self.use_softadapt:
@@ -366,7 +413,7 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
     def configure_optimizers(self):
         optimizer_cfg = self.optimizer_cfg
         optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
-        scheduler = ReduceLROnPlateau(optimizer, patience=5, verbose=True)
+        scheduler = ReduceLROnPlateau(optimizer, patience=self.scheduler_patience, verbose=True)
 
         return {
             "optimizer": optimizer,

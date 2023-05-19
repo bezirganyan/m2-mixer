@@ -1,18 +1,22 @@
 from os import path
-from typing import List, Optional, Any
+from typing import Any, List, Optional
 
 import numpy as np
-import wandb
 import torch
+import wandb
 from omegaconf import DictConfig
-from softadapt import LossWeightedSoftAdapt
 from torch import nn
-from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss
-from torchmetrics import F1Score, Accuracy, Precision, Recall
+from torch.nn import BCEWithLogitsLoss
+from torchmetrics import Accuracy, F1Score, Precision, Recall
 
 import modules
 from modules.train_test_module import AbstractTrainTestModule
 
+try:
+    from softadapt import LossWeightedSoftAdapt
+except ModuleNotFoundError:
+    print('Warning: Could not import softadapt. LossWeightedSoftAdapt will not be available.')
+    LossWeightedSoftAdapt = None
 
 class MultiOFFMixerMultiLoss(AbstractTrainTestModule):
     def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
@@ -47,12 +51,16 @@ class MultiOFFMixerMultiLoss(AbstractTrainTestModule):
 
         self.use_softadapt = model_cfg.get('use_softadapt', False)
         if self.use_softadapt:
-            self.image_criterion_history = list()
-            self.text_criterion_history = list()
-            self.fusion_criterion_history = list()
-            self.loss_weights = torch.tensor([1.0 / 3, 1.0 / 3, 1.0 / 3], device=self.device)
-            self.update_loss_weights_per_epoch = model_cfg.get('update_loss_weights_per_epoch', 6)
-            self.softadapt = LossWeightedSoftAdapt(beta=-0.1, accuracy_order=self.update_loss_weights_per_epoch - 1)
+            if LossWeightedSoftAdapt is None:
+                self.use_softadapt = False
+                print('SoftAdapt is not installed! Hence, will not be used!')
+            else:
+                self.image_criterion_history = []
+                self.text_criterion_history = []
+                self.fusion_criterion_history = []
+                self.loss_weights = torch.tensor([1.0 / 3, 1.0 / 3, 1.0 / 3], device=self.device)
+                self.update_loss_weights_per_epoch = model_cfg.get('update_loss_weights_per_epoch', 6)
+                self.softadapt = LossWeightedSoftAdapt(beta=-0.1, accuracy_order=self.update_loss_weights_per_epoch - 1)
 
     def shared_step(self, batch, **kwargs):
         # Load data

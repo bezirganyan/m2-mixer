@@ -1,18 +1,22 @@
 from os import path
-from typing import List, Optional, Any
+from typing import Any, List, Optional
 
 import numpy as np
-import wandb
 import torch
+import wandb
 from omegaconf import DictConfig
-from softadapt import LossWeightedSoftAdapt
 from torch import nn
-from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss
-from torchmetrics import F1Score, Accuracy, Precision, Recall, AUROC
+from torch.nn import BCEWithLogitsLoss
+from torchmetrics import AUROC, Accuracy, F1Score, Precision, Recall
 
 import modules
 from modules.train_test_module import AbstractTrainTestModule
 
+try:
+    from softadapt import LossWeightedSoftAdapt
+except ModuleNotFoundError:
+    print('Warning: Could not import softadapt. LossWeightedSoftAdapt will not be available.')
+    LossWeightedSoftAdapt = None
 
 class MMHS150MultiLoss(AbstractTrainTestModule):
     def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
@@ -44,19 +48,24 @@ class MMHS150MultiLoss(AbstractTrainTestModule):
                                                     model_cfg.modalities.classification.num_classes)
         self.classifier_fusion = modules.get_classifier_by_name(**model_cfg.modalities.classification)
 
-        self.image_criterion = BCEWithLogitsLoss(pos_weight=torch.tensor([3.0]))
-        self.text_criterion = BCEWithLogitsLoss()
-        self.text_ocr_criterion = BCEWithLogitsLoss()
-        self.fusion_criterion = BCEWithLogitsLoss()
-
+        self.image_criterion = BCEWithLogitsLoss(pos_weight=torch.tensor([3.57]))
+        self.text_criterion = BCEWithLogitsLoss(pos_weight=torch.tensor([3.57]))
+        self.text_ocr_criterion = BCEWithLogitsLoss(pos_weight=torch.tensor([3.57]))
+        self.fusion_criterion = BCEWithLogitsLoss(pos_weight=torch.tensor([3.57]))
+        self.fusion_loss_weight = model_cfg.get('fusion_loss_weight', 1.0 / 4)
+        self.fusion_loss_change = model_cfg.get('fusion_loss_change', 0)
         self.use_softadapt = model_cfg.get('use_softadapt', False)
         if self.use_softadapt:
-            self.image_criterion_history = list()
-            self.text_criterion_history = list()
-            self.fusion_criterion_history = list()
-            self.loss_weights = torch.tensor([1.0 / 3, 1.0 / 3, 1.0 / 3], device=self.device)
-            self.update_loss_weights_per_epoch = model_cfg.get('update_loss_weights_per_epoch', 6)
-            self.softadapt = LossWeightedSoftAdapt(beta=-0.1, accuracy_order=self.update_loss_weights_per_epoch - 1)
+            if LossWeightedSoftAdapt is None:
+                self.use_softadapt = False
+                print('SoftAdapt is not installed! Hence, will not be used!')
+            else:
+                self.image_criterion_history = []
+                self.text_criterion_history = []
+                self.fusion_criterion_history = []
+                self.loss_weights = torch.tensor([1.0 / 3, 1.0 / 3, 1.0 / 3], device=self.device)
+                self.update_loss_weights_per_epoch = model_cfg.get('update_loss_weights_per_epoch', 6)
+                self.softadapt = LossWeightedSoftAdapt(beta=-0.1, accuracy_order=self.update_loss_weights_per_epoch - 1)
 
     def shared_step(self, batch, **kwargs):
         # Load data
@@ -88,21 +97,18 @@ class MMHS150MultiLoss(AbstractTrainTestModule):
 
         # compute losses
         loss_image = self.image_criterion(image_logits, labels.unsqueeze(1).float())
-        loss_text = self.text_criterion(text_logits, labels.unsqueeze(1).float())
-        loss_text_ocr = self.text_ocr_criterion(text_ocr_logits, labels.unsqueeze(1).float())
+        loss_text = self.text_criterion(text_logits * batch['use_features'],
+                                        labels.unsqueeze(1).float() * batch['use_features'])
+        loss_text_ocr = self.text_ocr_criterion(text_ocr_logits * batch['use_features_ocr'],
+                                                labels.unsqueeze(1).float() * batch['use_features_ocr'])
         loss_fusion = self.fusion_criterion(logits, labels.unsqueeze(1).float())
 
-        if self.use_softadapt:
-            loss = self.loss_weights[0] * loss_image + self.loss_weights[1] * loss_text + self.loss_weights[
-                2] * loss_fusion
-        else:
-            loss = loss_image + loss_text + loss_fusion + loss_text_ocr
-        if self.modalities_freezed and kwargs.get('mode', None) == 'train':
-            loss = loss_fusion
+        ow = (1 - self.fusion_loss_weight) / 3
+        loss = self.fusion_loss_weight * loss_fusion + ow * loss_image + ow * loss_text + ow * loss_text_ocr
 
         # get predictions
         preds = (torch.sigmoid(logits) > 0.5).long()
-        # preds = torch.tensor(np.random.choice([0, 1], size=preds.shape, p=[0.5, 0.5])).long()
+        preds = torch.tensor(np.random.choice([0, 1], size=preds.shape, p=[0.5, 0.5])).long()
         preds_image = (torch.sigmoid(image_logits) > 0.5).long()
         preds_text = (torch.sigmoid(text_logits) > 0.5).long()
         preds_text_ocr = (torch.sigmoid(text_ocr_logits) > 0.5).long()
@@ -126,6 +132,7 @@ class MMHS150MultiLoss(AbstractTrainTestModule):
 
     def training_epoch_end(self, outputs) -> None:
         super().training_epoch_end(outputs)
+        self.fusion_loss_weight = min(1, self.fusion_loss_weight + self.fusion_loss_change)
         wandb.log({'train_loss_image': torch.stack([x['loss_image'] for x in outputs]).mean().item()})
         wandb.log({'train_loss_text': torch.stack([x['loss_text'] for x in outputs]).mean().item()})
         wandb.log({'train_loss_fusion': torch.stack([x['loss_fusion'] for x in outputs]).mean().item()})
@@ -146,15 +153,18 @@ class MMHS150MultiLoss(AbstractTrainTestModule):
             self.log('val_loss_fusion', self.fusion_criterion_history[-1])
 
             if self.current_epoch != 0 and (self.current_epoch % self.update_loss_weights_per_epoch == 0):
-                print('[!] Updating loss weights')
-                self.loss_weights = self.softadapt.get_component_weights(torch.tensor(self.image_criterion_history),
-                                                                         torch.tensor(self.text_criterion_history),
-                                                                         torch.tensor(self.fusion_criterion_history),
-                                                                         verbose=True)
-                print(f'[!] loss weights: {self.loss_weights}')
-                self.image_criterion_history = list()
-                self.text_criterion_history = list()
-                self.fusion_criterion_history = list()
+                self._update_softadapt_weights()
+
+    def _update_softadapt_weights(self):
+        print('[!] Updating loss weights')
+        self.loss_weights = self.softadapt.get_component_weights(torch.tensor(self.image_criterion_history),
+                                                                 torch.tensor(self.text_criterion_history),
+                                                                 torch.tensor(self.fusion_criterion_history),
+                                                                 verbose=True)
+        print(f'[!] loss weights: {self.loss_weights}')
+        self.image_criterion_history = []
+        self.text_criterion_history = []
+        self.fusion_criterion_history = []
 
     def setup_criterion(self) -> torch.nn.Module:
         return None
@@ -191,9 +201,18 @@ class MMHS150MultiLoss(AbstractTrainTestModule):
         if self.checkpoint_path is None:
             self.checkpoint_path = f'{self.logger.save_dir}/{self.logger.name}/version_{self.logger.version}/checkpoints/'
         save_path = path.dirname(self.checkpoint_path)
-        torch.save(dict(preds=preds, preds_image=preds_image, preds_text=preds_text, labels=labels,
-                        image_logits=image_logits, text_logits=text_logits, logits=logits),
-                   save_path + '/test_preds.pt')
+        torch.save(
+            dict(
+                preds=preds,
+                preds_image=preds_image,
+                preds_text=preds_text,
+                labels=labels,
+                image_logits=image_logits,
+                text_logits=text_logits,
+                logits=logits,
+            ),
+            f'{save_path}/test_preds.pt',
+        )
         print(f'[!] Saved test predictions to {save_path}/test_preds.pt')
 
     @classmethod

@@ -1,0 +1,56 @@
+train:
+  tensorboard_path: ./logs/
+  log_interval_steps: 10
+  epochs: 200
+  optimizer:
+    lr: 1e-2
+    betas: [0.9, 0.999]
+    eps: 1e-8
+    weight_decay: 0.0
+    scheduler_patience: 2
+  seed: 42
+  monitor: val_loss
+  monitor_mode: min
+
+dataset:
+  type: AVMnistDataModule
+  params:
+    data_dir: ../data/avmnist_orig/avmnist
+    batch_size: 32
+    num_workers: -1
+    p_muting: 0.0
+
+model:
+  type: AVMnistMixerMultiLoss
+  dropout: 0.1
+  modalities:
+    classification:
+      num_classes: 10
+      classifier: StandardClassifier
+      input_shape: [16, 49, 64]
+      hidden_dims: [1024, 512, 256, 32]
+    image:
+      block_type: MLPMixer
+      in_channels: 1
+      hidden_dim: 128
+      patch_size: 14
+      image_size: [28, 28]
+      token_dim: 32
+      channel_dim: 3072
+      num_mixers: 4
+    audio:
+      block_type: MLPMixer
+      in_channels: 1
+      hidden_dim: 128
+      patch_size: 56
+      image_size: [112, 112]
+      token_dim: 32
+      channel_dim: 3072
+      num_mixers: 4
+    multimodal:
+      block_type: FusionMixer
+      fusion_function: ConcatFusion
+      hidden_dim: 128
+      token_dim: 32
+      channel_dim: 3078
+      num_mixers: 2
