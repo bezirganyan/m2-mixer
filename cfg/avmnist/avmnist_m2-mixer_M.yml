@@ -17,13 +17,12 @@ dataset:
   params:
     data_dir: ../data/avmnist_orig/avmnist
     batch_size: 32
-    num_workers: -1
+    num_workers: 2
     p_muting: 0.0
 
 model:
   type: AVMnistMixerMultiLoss
   dropout: 0.1
-#  gradblend: True
   modalities:
     classification:
       num_classes: 10
