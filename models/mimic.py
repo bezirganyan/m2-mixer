@@ -106,11 +106,6 @@ class MimicMixerMultiLoss(AbstractTrainTestModule):
         static_logits = self.classifier_static(static_logits)
         time_logits = self.classifier_time(time.mean(1))
         logits = self.classifier_fusion(logits)
-        #
-        # # normalize logits
-        # static_logits = (static_logits - static_logits.mean(1, keepdim=True)) / static_logits.std(1, keepdim=True)
-        # time_logits = (time_logits - time_logits.mean(1, keepdim=True)) / time_logits.std(1, keepdim=True)
-        # logits = (logits - logits.mean(1, keepdim=True)) / logits.std(1, keepdim=True)
 
         # compute losses
         loss_fusion = self.fusion_criterion(logits, labels)
@@ -210,17 +205,6 @@ class MimicMixerMultiLoss(AbstractTrainTestModule):
             elif isinstance(m, nn.Linear):
                 nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.constant_(m.bias, 0)
-
-    def configure_optimizers(self):
-        optimizer_cfg = self.optimizer_cfg
-        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
-        scheduler = ReduceLROnPlateau(optimizer, patience=5, verbose=True)
-
-        return {
-            "optimizer": optimizer,
-            "lr_scheduler": scheduler,
-            "monitor": "val_loss",
-        }
 
 
 class MimicRecurrent(MimicMixerMultiLoss):
