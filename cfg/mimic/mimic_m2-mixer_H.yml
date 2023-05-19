@@ -3,7 +3,7 @@ train:
   log_interval_steps: 10
   epochs: 300
   optimizer:
-    lr: 1e-2
+    lr: 1e-3
     weight_decay: 0.0
   seed: 42
   monitor: val_loss
@@ -20,9 +20,6 @@ dataset:
 model:
   type: MimicMixerMultiLoss
   dropout: 0.3
-#  fusion_loss_weight: 0.8
-#  fusion_loss_change: 0.05
-#  loss_change_epoch: 10
   gradblend: False
   modalities:
     classification:
