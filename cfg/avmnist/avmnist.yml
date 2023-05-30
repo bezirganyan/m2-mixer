@@ -21,6 +21,8 @@ dataset:
 
 model:
   type: AVMnistMixer
+#  mute: image
+#  train_branch: image
   dropout: 0.1
   modalities:
     classification:

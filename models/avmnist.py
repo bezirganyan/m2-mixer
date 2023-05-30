@@ -20,6 +20,7 @@ from typing import List, Any, Optional
 from torch.nn import CrossEntropyLoss
 from torchmetrics import Accuracy, F1Score, Precision, Recall
 import modules
+
 try:
     from softadapt import LossWeightedSoftAdapt
 except ModuleNotFoundError:
@@ -125,6 +126,11 @@ class AVMnistMixer(AbstractAVMnistMixer):
         super(AVMnistMixer, self).__init__(model_cfg, optimizer_cfg, **kwargs)
         self.optimizer_cfg = optimizer_cfg
         self.mute = model_cfg.get('mute', None)
+        self.train_branch = model_cfg.get('train_branch', None)
+        if self.train_branch is not None:
+            self.branch_classifier = torch.nn.Linear(
+                model_cfg.modalities.image.hidden_dim if self.train_branch == 'image' else model_cfg.modalities.audio.hidden_dim,
+                model_cfg.modalities.classification.num_classes)
         image_config = model_cfg.modalities.image
         audio_config = model_cfg.modalities.audio
         multimodal_config = model_cfg.modalities.multimodal
@@ -146,6 +152,22 @@ class AVMnistMixer(AbstractAVMnistMixer):
         elif self.mute == 'audio':
             audio = torch.zeros_like(audio)
 
+        if self.train_branch == 'image':
+            # freeze image branch
+            for param in self.image_mixer.parameters():
+                param.requires_grad = False
+
+            image_logits = self.image_mixer(image)
+            return self.branch_classifier(image_logits.mean(dim=1))
+
+        elif self.train_branch == 'audio':
+            # freeze audio branch
+            for param in self.audio_mixer.parameters():
+                param.requires_grad = False
+
+            audio_logits = self.audio_mixer(audio)
+            return self.branch_classifier(audio_logits.mean(dim=1))
+
         image_logits = self.image_mixer(image)
         audio_logits = self.audio_mixer(audio)
 
@@ -161,6 +183,31 @@ class AVMnistMixer(AbstractAVMnistMixer):
         logits = self.classifier(logits)
 
         return logits
+
+    @classmethod
+    def load_from_checkpoint(
+            cls,
+            checkpoint_path,
+            map_location=None,
+            hparams_file: Optional = None,
+            strict: bool = True,
+            **kwargs: Any,
+    ):
+        return super().load_from_checkpoint(
+            checkpoint_path, map_location, hparams_file, False, **kwargs
+        )
+
+    def configure_optimizers(self):
+        optimizer_cfg = self.optimizer_cfg
+        scheduler_patience = optimizer_cfg.pop('scheduler_patience', 5)
+        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
+        # scheduler = ReduceLROnPlateau(optimizer, patience=scheduler_patience, verbose=True)
+
+        return {
+            "optimizer": optimizer,
+            # "lr_scheduler": scheduler,
+            "monitor": "val_loss",
+        }
 
 
 class AVMnistMixerMultiLoss(AbstractTrainTestModule):
@@ -242,7 +289,7 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
 
         if kwargs.get('mode', None) == 'train':
             if self.freeze_modalities_on_epoch is not None and (self.current_epoch == self.freeze_modalities_on_epoch) \
-                        and not self.modalities_freezed:
+                    and not self.modalities_freezed:
                 self._freeze_modalities()
             if self.random_modality_muting_on_freeze and (self.current_epoch >= self.freeze_modalities_on_epoch):
                 self.mute = np.random.choice(['image', 'audio', 'multimodal'], p=[self.muting_probs['image'],
@@ -281,8 +328,8 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
             loss = self.loss_weights[0] * loss_image + self.loss_weights[1] * loss_audio + self.loss_weights[
                 2] * loss_fusion
         elif (
-            self.use_gradblend
-            and self.gb_weights is not None
+                self.use_gradblend
+                and self.gb_weights is not None
         ):
             loss = self.gb_weights[2] * loss_fusion + self.gb_weights[1] * loss_image + self.gb_weights[
                 0] * loss_audio
@@ -577,3 +624,49 @@ class AVMnistMixerMultiLossUQ(AVMnistMixerMultiLoss):
     #     scheduler = StepLR(optimizer, step_size=1, gamma=0.1)
     #
     #     return [optimizer], [scheduler]
+
+
+class AVMnistLateMixer(AbstractAVMnistMixer):
+    def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
+        super(AVMnistLateMixer, self).__init__(model_cfg, optimizer_cfg, **kwargs)
+        self.optimizer_cfg = optimizer_cfg
+        self.mute = model_cfg.get('mute', None)
+        image_config = model_cfg.modalities.image
+        audio_config = model_cfg.modalities.audio
+        dropout = model_cfg.get('dropout', 0.0)
+        self.image_mixer = modules.get_block_by_name(**image_config, dropout=dropout)
+        self.audio_mixer = modules.get_block_by_name(**audio_config, dropout=dropout)
+        self.image_classifier = modules.get_classifier_by_name(**model_cfg.modalities.classification)
+        self.audio_classifier = modules.get_classifier_by_name(**model_cfg.modalities.classification)
+        self.fusion_function = modules.get_fusion_by_name(**model_cfg.modalities.multimodal)
+        self.classifier = modules.get_classifier_by_name(**model_cfg.modalities.multimodal.classification)
+
+    def get_logits(self, batch):
+        image = batch['image']
+        audio = batch['audio']
+
+        if self.mute == 'image':
+            image = torch.zeros_like(image)
+        elif self.mute == 'audio':
+            audio = torch.zeros_like(audio)
+
+        image_logits = self.image_mixer(image)
+        audio_logits = self.audio_mixer(audio)
+
+        image_logits = self.image_classifier(image_logits)
+        audio_logits = self.audio_classifier(audio_logits)
+
+        fused_decisions = self.fusion_function(image_logits, audio_logits)
+        return self.classifier(fused_decisions)
+
+    def configure_optimizers(self):
+        optimizer_cfg = self.optimizer_cfg
+        scheduler_patience = optimizer_cfg.pop('scheduler_patience', 5)
+        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
+        # scheduler = ReduceLROnPlateau(optimizer, patience=scheduler_patience, verbose=True)
+
+        return {
+            "optimizer": optimizer,
+            # "lr_scheduler": scheduler,
+            "monitor": "val_loss",
+        }
