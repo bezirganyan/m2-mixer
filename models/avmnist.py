@@ -16,9 +16,9 @@ from modules.mixer import MLPMixer
 
 import torch
 
-from typing import List, Any, Optional
+from typing import Dict, List, Any, Optional
 from torch.nn import CrossEntropyLoss
-from torchmetrics import Accuracy, F1Score, Precision, Recall
+from torchmetrics import Accuracy, F1Score, Metric, Precision, Recall
 import modules
 
 try:
@@ -626,9 +626,9 @@ class AVMnistMixerMultiLossUQ(AVMnistMixerMultiLoss):
     #     return [optimizer], [scheduler]
 
 
-class AVMnistLateMixer(AbstractAVMnistMixer):
+class AVMnistLateMixer(AbstractTrainTestModule):
     def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
-        super(AVMnistLateMixer, self).__init__(model_cfg, optimizer_cfg, **kwargs)
+        super(AVMnistLateMixer, self).__init__(optimizer_cfg, log_confusion_matrix=True, **kwargs)
         self.optimizer_cfg = optimizer_cfg
         self.mute = model_cfg.get('mute', None)
         image_config = model_cfg.modalities.image
@@ -641,9 +641,14 @@ class AVMnistLateMixer(AbstractAVMnistMixer):
         self.fusion_function = modules.get_fusion_by_name(**model_cfg.modalities.multimodal)
         self.classifier = modules.get_classifier_by_name(**model_cfg.modalities.multimodal.classification)
 
-    def get_logits(self, batch):
+        self.criterion = nn.CrossEntropyLoss()
+        self.audio_criterion = nn.CrossEntropyLoss()
+        self.image_criterion = nn.CrossEntropyLoss()
+
+    def shared_step(self, batch, **kwargs):
         image = batch['image']
         audio = batch['audio']
+        labels = batch['label']
 
         if self.mute == 'image':
             image = torch.zeros_like(image)
@@ -657,16 +662,48 @@ class AVMnistLateMixer(AbstractAVMnistMixer):
         audio_logits = self.audio_classifier(audio_logits)
 
         fused_decisions = self.fusion_function(image_logits, audio_logits)
-        return self.classifier(fused_decisions)
+        logits = self.classifier(fused_decisions)
+        loss_fusion = self.criterion(logits, labels)
+        loss_image = self.image_criterion(image_logits, labels)
+        loss_audio = self.audio_criterion(audio_logits, labels)
+
+        loss = loss_fusion + loss_image + loss_audio
+        preds = torch.softmax(logits, dim=1).argmax(dim=1)
+
+        return {
+            'preds': preds,
+            'labels': labels,
+            'loss': loss
+        }
 
     def configure_optimizers(self):
         optimizer_cfg = self.optimizer_cfg
-        scheduler_patience = optimizer_cfg.pop('scheduler_patience', 5)
+        scheduler_patience = optimizer_cfg.pop('scheduler_patience', 2)
         optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
-        # scheduler = ReduceLROnPlateau(optimizer, patience=scheduler_patience, verbose=True)
+        scheduler = ReduceLROnPlateau(optimizer, patience=scheduler_patience, verbose=True)
 
         return {
             "optimizer": optimizer,
-            # "lr_scheduler": scheduler,
+            "lr_scheduler": scheduler,
             "monitor": "val_loss",
         }
+
+
+    def setup_criterion(self) -> torch.nn.Module:
+        return None
+
+    def setup_scores(self) -> List[torch.nn.Module]:
+        train_scores = dict(acc=Accuracy(task="multiclass", num_classes=10),
+                            f1m=F1Score(task="multiclass", num_classes=10, average='macro'),
+                            prec_m=Precision(task="multiclass", num_classes=10, average='macro'),
+                            rec_m=Recall(task="multiclass", num_classes=10, average='macro'))
+        val_scores = dict(acc=Accuracy(task="multiclass", num_classes=10),
+                          f1m=F1Score(task="multiclass", num_classes=10, average='macro'),
+                          prec_m=Precision(task="multiclass", num_classes=10, average='macro'),
+                          rec_m=Recall(task="multiclass", num_classes=10, average='macro'))
+        test_scores = dict(acc=Accuracy(task="multiclass", num_classes=10),
+                           f1m=F1Score(task="multiclass", num_classes=10, average='macro'),
+                           prec_m=Precision(task="multiclass", num_classes=10, average='macro'),
+                           rec_m=Recall(task="multiclass", num_classes=10, average='macro'))
+
+        return [train_scores, val_scores, test_scores]
