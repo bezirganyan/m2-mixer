@@ -63,8 +63,8 @@ class MultiModalGatedUnit(nn.Module):
         self.out_size = out_size
         self.modalities = nn.ModuleList([])
         self.z_list = nn.ModuleList([])
-        for mod in n_modalities:
-            self.modalities.append(nn.Linear(mod, out_size))
+        for mod in range(n_modalities):
+            self.modalities.append(nn.Linear(in_shape, out_size))
             self.z_list.append(nn.Linear(in_shape * n_modalities, out_size))
 
     def forward(self, *args):
