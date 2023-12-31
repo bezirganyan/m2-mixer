@@ -30,7 +30,7 @@ class TestFusions:
         assert fusion(input_1, input_2).shape == (10, 40, 40, 30)
 
         assert fusion.get_output_shape(input_1.shape, input_2.shape) == (10, 40, 40, 30)
-        assert fusion.get_output_shape(36, 36, dim=1) == 12*12
+        assert fusion.get_output_shape(36, 36, dim=1) == 12 * 12
         assert fusion.get_output_shape(20, 20, dim=0) == 20
         with pytest.raises(ValueError):
             fusion.get_output_shape(input_1, input_2, dim=2)
@@ -83,7 +83,7 @@ class TestFusions:
         input_1 = torch.rand(10, 20, 30)
         input_2 = torch.rand(10, 20, 30)
         input_3 = torch.rand(10, 20, 30)
-        fusion = MultiModalGatedUnit(30, 30, 30, out_size=30, useless_arg=1)
+        fusion = MultiModalGatedUnit(3, 30, out_size=30, useless_arg=1)
         assert fusion(input_1, input_2, input_3).shape == (10, 20, 30)
         assert fusion.get_output_shape(input_1.shape, input_2.shape) == (10, 20, 30)
         assert fusion.get_output_shape(20, 20, 20, dim=1) == 20
