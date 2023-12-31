@@ -1,0 +1,18 @@
+name: Test
+on: [ push, pull_request ]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: [ "3.10", "3.11" ]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install requirements
+        run: pip install -r ./requirements_dev.txt
+      - name: Run pytest
+        run: pytest
