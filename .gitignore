@@ -4,3 +4,5 @@ logs/
 wandb/
 .idea/
 GoogleNews-vectors-negative300.bin
+/build/
+/m2_mixer.egg-info/
