@@ -85,6 +85,7 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
                 self.log(f'train_{metric}_step', score, on_step=True, on_epoch=False, prog_bar=True, logger=True)
         wandb.log({'train_loss_step': results['loss'].cpu().item()})
         self.training_step_outputs.append(results)
+        return results
 
     def on_train_epoch_end(self):
         if self.train_scores is not None:
@@ -105,6 +106,7 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
             for metric in self.val_scores:
                 self.val_scores[metric](results['preds'].to(self.device), results['labels'].to(self.device))
         self.validation_step_outputs.append(results)
+        return results
 
     def on_validation_epoch_end(self):
         if self.val_scores is not None:
@@ -146,8 +148,9 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
         if self.test_scores is not None:
             for metric in self.test_scores:
                 self.test_scores[metric](results['preds'].to(self.device), results['labels'].to(self.device))
-
         self.test_step_outputs.append(results)
+        return results
+
 
     def on_test_epoch_end(self):
         if self.test_scores is not None:
