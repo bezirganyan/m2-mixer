@@ -23,6 +23,9 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
         super(AbstractTrainTestModule, self).__init__(**kwargs)
         self.criterion = self.setup_criterion()
         self.train_scores, self.val_scores, self.test_scores = self.setup_scores()
+        self.training_step_outputs = []
+        self.validation_step_outputs = []
+        self.test_step_outputs = []
         if any([isinstance(self.train_scores, list), isinstance(self.val_scores, list),
                 isinstance(self.test_scores, list)]):
             raise ValueError('Scores must be a dict')
@@ -81,15 +84,17 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
                 score = self.train_scores[metric](results['preds'].to(self.device), results['labels'].to(self.device))
                 self.log(f'train_{metric}_step', score, on_step=True, on_epoch=False, prog_bar=True, logger=True)
         wandb.log({'train_loss_step': results['loss'].cpu().item()})
+        self.training_step_outputs.append(results)
         return results
 
-    def training_epoch_end(self, outputs):
+    def on_train_epoch_end(self):
         if self.train_scores is not None:
             for metric in self.train_scores:
                 train_score = self.train_scores[metric].compute()
                 wandb.log({f'train_{metric}': train_score})
                 self.log(f'train_{metric}', train_score, prog_bar=True, logger=True)
-        wandb.log({'train_loss': np.mean([output['loss'].cpu().item() for output in outputs])})
+        wandb.log({'train_loss': np.mean([output['loss'].cpu().item() for output in self.training_step_outputs])})
+        self.training_step_outputs.clear()
 
     def validation_step(self, batch, batch_idx):
         if self.val_scores is not None:
@@ -100,15 +105,16 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
         if self.val_scores is not None:
             for metric in self.val_scores:
                 self.val_scores[metric](results['preds'].to(self.device), results['labels'].to(self.device))
+        self.validation_step_outputs.append(results)
         return results
 
-    def validation_epoch_end(self, outputs):
+    def on_validation_epoch_end(self):
         if self.val_scores is not None:
             for metric in self.val_scores:
                 val_score = self.val_scores[metric].compute()
                 wandb.log({f'val_{metric}': val_score})
                 self.log(f'val_{metric}', val_score, prog_bar=True, logger=True)
-        val_loss = np.mean([output['loss'].cpu().item() for output in outputs])
+        val_loss = np.mean([output['loss'].cpu().item() for output in self.validation_step_outputs])
         wandb.log({'val_loss': val_loss})
         if self.best_epochs['val_loss'] is None or (val_loss <= self.best_epochs['val_loss'][1]):
             self.best_epochs['val_loss'] = (self.current_epoch, val_loss)
@@ -122,14 +128,15 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
                     val_score = self.val_scores[metric].compute()
                     wandb.run.summary[f'best_val_{metric}'] = val_score
         if self.log_confusion_matrix:
-            preds = torch.cat([output['preds'].cpu() for output in outputs])
-            labs = torch.cat([output['labels'].cpu() for output in outputs])
+            preds = torch.cat([output['preds'].cpu() for output in self.validation_step_outputs])
+            labs = torch.cat([output['labels'].cpu() for output in self.validation_step_outputs])
             wandb.log({'conf_mat': wandb.plot.confusion_matrix(
                 probs=None,
                 y_true=labs.long().cpu().numpy(),
                 preds=preds.long().cpu().numpy(),
                 class_names=range(max(preds.long().max().item(), labs.max().item()) + 1),
             )})
+        self.validation_step_outputs.clear()
 
     def test_step(self, batch, batch_idx):
         self.log_n_parameters()
@@ -141,23 +148,26 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
         if self.test_scores is not None:
             for metric in self.test_scores:
                 self.test_scores[metric](results['preds'].to(self.device), results['labels'].to(self.device))
+        self.test_step_outputs.append(results)
         return results
 
-    def test_epoch_end(self, outputs, save_preds=False):
+
+    def on_test_epoch_end(self):
         if self.test_scores is not None:
             for metric in self.test_scores:
                 test_score = self.test_scores[metric].compute()
                 wandb.log({f'test_{metric}': test_score})
                 self.log(f'test_{metric}', test_score, prog_bar=True, logger=True)
         if self.log_confusion_matrix:
-            preds = torch.cat([output['preds'].cpu() for output in outputs])
-            labs = torch.cat([output['labels'].cpu() for output in outputs])
+            preds = torch.cat([output['preds'].cpu() for output in self.test_step_outputs])
+            labs = torch.cat([output['labels'].cpu() for output in self.test_step_outputs])
             wandb.log({'conf_mat': wandb.plot.confusion_matrix(
                 probs=None,
                 y_true=labs.long().cpu().numpy(),
                 preds=preds.long().cpu().numpy(),
                 class_names=range(max(preds.max().item(), labs.max().item()) + 1),
             )})
+        self.test_step_outputs.clear()
 
     def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
         results = self.shared_step(batch)
