@@ -1,11 +1,8 @@
-import PIL.Image
-import h5py
 import json
 # import logging
 import math
 import os
 import re
-import sys
 from collections import OrderedDict, Counter
 
 import numpy as np
@@ -16,7 +13,6 @@ from PIL.Image import Resampling
 from gensim.models.word2vec import KeyedVectors
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MultiLabelBinarizer
-from sklearn.feature_extraction.text import TfidfVectorizer
 from tqdm import tqdm
 
 

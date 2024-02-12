@@ -1,7 +1,7 @@
 """Implements dataloaders for generic MIMIC tasks."""
 import os
 import numpy as np
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 import random
 import pickle
 import copy

@@ -11,7 +11,6 @@ import pytorch_lightning as pl
 import torchvision.transforms as T
 from torchvision.transforms import InterpolationMode
 
-from datasets.transforms import RuinModality
 from utils.projection import Projection
 
 

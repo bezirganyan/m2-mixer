@@ -7,7 +7,6 @@ import random
 import string
 import argparse
 from IPython import embed
-from torchvision.transforms import InterpolationMode
 import torchvision.transforms as T
 import pytorch_lightning as pl
 

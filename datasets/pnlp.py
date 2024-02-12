@@ -1,5 +1,4 @@
 from utils.projection import Projection
-import json
 import numpy as np
 import pytorch_lightning as pl
 from omegaconf.dictconfig import DictConfig
