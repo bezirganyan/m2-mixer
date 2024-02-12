@@ -2,14 +2,12 @@ import os
 from typing import List
 
 import numpy as np
-import torch
 from PIL import Image
 from omegaconf import DictConfig
 from tokenizers.implementations import BertWordPieceTokenizer
 from torch.utils.data import Dataset, DataLoader
 import pytorch_lightning as pl
 import torchvision.transforms as T
-from torchvision.transforms import InterpolationMode
 
 from datasets.transforms import RuinModality
 from utils.projection import Projection

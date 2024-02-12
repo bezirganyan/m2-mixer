@@ -1,12 +1,9 @@
-from os import path
-from typing import Optional, Any, List
+from typing import List
 
 import torch
 from omegaconf import DictConfig
-from torch import nn
-from torch.nn import BCELoss, BCEWithLogitsLoss
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torchmetrics import Accuracy, F1Score, Precision, Recall
+from torchmetrics import Accuracy, F1Score, Precision
 
 import modules
 from modules.train_test_module import AbstractTrainTestModule

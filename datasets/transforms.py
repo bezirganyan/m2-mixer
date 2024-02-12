@@ -1,6 +1,5 @@
 from random import random
 
-import torch
 import torchvision.transforms as T
 
 class RuinModality:

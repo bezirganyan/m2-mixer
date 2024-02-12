@@ -4,7 +4,6 @@ from typing import List
 
 import gensim
 import numpy as np
-import pandas as pd
 from PIL import Image
 from omegaconf import DictConfig
 from tokenizers.implementations import BertWordPieceTokenizer
@@ -13,7 +12,6 @@ import pytorch_lightning as pl
 import torchvision.transforms as T
 from torchvision.transforms import InterpolationMode
 
-from datasets.transforms import RuinModality
 from utils.projection import Projection
 
 
