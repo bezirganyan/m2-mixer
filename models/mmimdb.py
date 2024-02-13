@@ -18,6 +18,7 @@ except ModuleNotFoundError:
     print('Warning: Could not import softadapt. LossWeightedSoftAdapt will not be available.')
     LossWeightedSoftAdapt = None
 
+
 class MMIMDBMixerMultiLoss(AbstractTrainTestModule):
     def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
         super(MMIMDBMixerMultiLoss, self).__init__(optimizer_cfg, log_confusion_matrix=False, **kwargs)
@@ -41,7 +42,7 @@ class MMIMDBMixerMultiLoss(AbstractTrainTestModule):
         self.classifier_image = torch.nn.Linear(model_cfg.modalities.image.hidden_dim,
                                                 model_cfg.modalities.classification.num_classes)
         self.classifier_text = torch.nn.Linear(model_cfg.modalities.text.hidden_dim,
-                                                model_cfg.modalities.classification.num_classes)
+                                               model_cfg.modalities.classification.num_classes)
         self.classifier_fusion = modules.get_classifier_by_name(**model_cfg.modalities.classification)
 
         pos_weight = torch.tensor(model_cfg.pos_weight)
@@ -85,8 +86,8 @@ class MMIMDBMixerMultiLoss(AbstractTrainTestModule):
 
             if self.random_modality_muting_on_freeze and (self.current_epoch >= self.freeze_modalities_on_epoch):
                 self.mute = np.random.choice(['image', 'text', 'multimodal'], p=[self.muting_probs['image'],
-                                                                                  self.muting_probs['text'],
-                                                                                  self.muting_probs['multimodal']])
+                                                                                 self.muting_probs['text'],
+                                                                                 self.muting_probs['multimodal']])
 
             if self.mute != 'multimodal':
                 if self.mute == 'image':
@@ -146,19 +147,25 @@ class MMIMDBMixerMultiLoss(AbstractTrainTestModule):
             'logits': logits
         }
 
-    def training_epoch_end(self, outputs) -> None:
-        super().training_epoch_end(outputs)
-        wandb.log({'train_loss_image': torch.stack([x['loss_image'] for x in outputs]).mean().item()})
-        wandb.log({'train_loss_text': torch.stack([x['loss_text'] for x in outputs]).mean().item()})
-        wandb.log({'train_loss_fusion': torch.stack([x['loss_fusion'] for x in outputs]).mean().item()})
-        self.log('train_loss_fusion', torch.stack([x['loss_fusion'] for x in outputs]).mean().item())
+    def on_train_epoch_end(self) -> None:
+        super().log_training_metrics()
+        wandb.log(
+            {'train_loss_image': torch.stack([x['loss_image'] for x in self.training_step_outputs]).mean().item()})
+        wandb.log({'train_loss_text': torch.stack([x['loss_text'] for x in self.training_step_outputs]).mean().item()})
+        wandb.log(
+            {'train_loss_fusion': torch.stack([x['loss_fusion'] for x in self.training_step_outputs]).mean().item()})
+        self.log('train_loss_fusion', torch.stack([x['loss_fusion'] for x in self.training_step_outputs]).mean().item())
+        self.training_step_outputs.clear()
 
-    def validation_epoch_end(self, outputs) -> None:
-        super().validation_epoch_end(outputs)
+    def on_validation_epoch_end(self) -> None:
+        super().log_validation_metrics()
         if self.use_softadapt:
-            self.image_criterion_history.append(torch.stack([x['loss_image'] for x in outputs]).mean().item())
-            self.text_criterion_history.append(torch.stack([x['loss_text'] for x in outputs]).mean().item())
-            self.fusion_criterion_history.append(torch.stack([x['loss_fusion'] for x in outputs]).mean().item())
+            self.image_criterion_history.append(
+                torch.stack([x['loss_image'] for x in self.validation_step_outputs]).mean().item())
+            self.text_criterion_history.append(
+                torch.stack([x['loss_text'] for x in self.validation_step_outputs]).mean().item())
+            self.fusion_criterion_history.append(
+                torch.stack([x['loss_fusion'] for x in self.validation_step_outputs]).mean().item())
             wandb.log({'loss_weight_image': self.loss_weights[0].item()})
             wandb.log({'loss_weight_text': self.loss_weights[1].item()})
             wandb.log({'loss_weight_fusion': self.loss_weights[2].item()})
@@ -177,6 +184,7 @@ class MMIMDBMixerMultiLoss(AbstractTrainTestModule):
                 self.image_criterion_history = list()
                 self.text_criterion_history = list()
                 self.fusion_criterion_history = list()
+        self.validation_step_outputs.clear()
 
     def setup_criterion(self) -> torch.nn.Module:
         return None
@@ -191,15 +199,15 @@ class MMIMDBMixerMultiLoss(AbstractTrainTestModule):
 
         return [train_scores, val_scores, test_scores]
 
-    def test_epoch_end(self, outputs, save_preds=False):
-        super().test_epoch_end(outputs, save_preds)
-        preds = torch.cat([x['preds'] for x in outputs])
-        preds_image = torch.cat([x['preds_image'] for x in outputs])
-        preds_text = torch.cat([x['preds_text'] for x in outputs])
-        labels = torch.cat([x['labels'] for x in outputs])
-        image_logits = torch.cat([x['image_logits'] for x in outputs])
-        text_logits = torch.cat([x['text_logits'] for x in outputs])
-        logits = torch.cat([x['logits'] for x in outputs])
+    def on_test_epoch_end(self, save_preds=False):
+        super().test_epoch_end(self.test_step_outputs, save_preds)
+        preds = torch.cat([x['preds'] for x in self.test_step_outputs])
+        preds_image = torch.cat([x['preds_image'] for x in self.test_step_outputs])
+        preds_text = torch.cat([x['preds_text'] for x in self.test_step_outputs])
+        labels = torch.cat([x['labels'] for x in self.test_step_outputs])
+        image_logits = torch.cat([x['image_logits'] for x in self.test_step_outputs])
+        text_logits = torch.cat([x['text_logits'] for x in self.test_step_outputs])
+        logits = torch.cat([x['logits'] for x in self.test_step_outputs])
 
         if self.checkpoint_path is None:
             self.checkpoint_path = f'{self.logger.save_dir}/{self.logger.name}/version_{self.logger.version}/checkpoints/'
@@ -208,6 +216,7 @@ class MMIMDBMixerMultiLoss(AbstractTrainTestModule):
                         image_logits=image_logits, text_logits=text_logits, logits=logits),
                    save_path + '/test_preds.pt')
         print(f'[!] Saved test predictions to {save_path}/test_preds.pt')
+        self.test_step_outputs.clear()
 
     @classmethod
     def load_from_checkpoint(
