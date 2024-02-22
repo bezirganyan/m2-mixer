@@ -113,3 +113,20 @@ You can download the checkpoints from the following links:
 <a href="https://anonfiles.com/8aZ1rds5zd/avmnist_m2_mixer_S_ckpt">avmnist_m2-mixer_S.ckpt</a> \
 <a href="https://anonfiles.com/95Zares4z5/avmnist_m2_mixer_M_ckpt">avmnist_m2-mixer_M.ckpt</a> \
 <a href="https://anonfiles.com/D1Z9rcs4zd/avmnist_m2_mixer_B_ckpt">avmnist_m2-mixer_B.ckpt</a>
+
+
+### Citation
+
+If you use this work in your paper please cite using: 
+```
+@INPROCEEDINGS{10386252,
+  author={Bezirganyan, Grigor and Sellami, Sana and Berti-ÉQuille, Laure and Fournier, Sébastien},
+  booktitle={2023 IEEE International Conference on Big Data (BigData)}, 
+  title={M2-Mixer: A Multimodal Mixer with Multi-head Loss for Classification from Multimodal Data}, 
+  year={2023},
+  volume={},
+  number={},
+  pages={1052-1058},
+  keywords={Training;Costs;Computational modeling;MIMICs;Computer architecture;Multitasking;Data models;Multimodal Deep Learning;Multimodal Data Fusion;Multimodal Classification;MLP;MLP-mixer},
+  doi={10.1109/BigData59044.2023.10386252}}
+```
