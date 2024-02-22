@@ -10,7 +10,7 @@
   <h3 align="center">M2-Mixer</h3>
 
   <p align="center">
-    An official implementation for paper: "M2-Mixer: A Multimodal Mixer with Multi-head Loss for Classification from Multimodal Data"
+    An official implementation for paper: <a href="https://ieeexplore.ieee.org/document/10386252">"M2-Mixer: A Multimodal Mixer with Multi-head Loss for Classification from Multimodal Data"</a>
     <br/>
     <br/>
 
@@ -75,11 +75,6 @@ Clone the repository and change the active directory with
 ```bash
 git clone https://github.com/bezirganyan/m2-mixer.git
 cd m2-mixer
-```
-
-Switch to the `paper_version` branch with
-```bash
-git checkout paper_version
 ```
 
 We recommend to create a new virtual environment with
