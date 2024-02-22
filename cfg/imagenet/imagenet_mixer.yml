@@ -1,0 +1,58 @@
+train:
+  tensorboard_path: ./logs/
+  log_interval_steps: 10
+  epochs: 200
+  optimizer:
+    lr: 1e-3
+    betas: [0.9, 0.999]
+    eps: 1e-8
+    weight_decay: 0.0
+    scheduler_patience: 2
+  seed: 42
+  monitor: val_loss
+  monitor_mode: min
+
+dataset:
+  type: ODIRDataModule
+  params:
+    data_dir: ../data/odir
+    df_filename: full_df.csv
+    w2v_model: ./pretrained/GoogleNews-vectors-negative300.bin
+    batch_size: 8
+    num_workers: 8
+    pin_memory: True
+model:
+  type: ODIRMixerMultiLoss
+  dropout: 0.1
+  modalities:
+    classification:
+      num_classes: 8
+      classifier: StandardClassifier
+      input_shape: [16, 49, 768]
+      hidden_dims: [1024, 512, 256, 32]
+    image1:
+      block_type: &block_type MLPMixer
+      in_channels: &in_channels 3
+      hidden_dim: &hidden_dim 768
+      patch_size: &patch_size 32
+      image_size: &image_size [512, 512]
+      token_dim: &token_dim 384
+      channel_dim: &channel_dim 3072
+      num_mixers: &num_mixers 8
+    image2:
+      block_type: *block_type
+      in_channels: *in_channels
+      hidden_dim: *hidden_dim
+      patch_size: *patch_size
+      image_size: *image_size
+      token_dim: *token_dim
+      channel_dim: *channel_dim
+      num_mixers: *num_mixers
+    multimodal:
+      block_type: FusionMixer
+      fusion_function: ConcatFusion
+      hidden_dim: 768
+      token_dim: 384
+      channel_dim: 3072
+      num_mixers: 4
+      num_modality: 2
