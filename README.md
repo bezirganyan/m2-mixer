@@ -23,6 +23,9 @@
 
 [//]: # (![Issues]&#40;https://img.shields.io/github/issues/bezirganyan/m2-mixer&#41; ![License]&#40;https://img.shields.io/github/license/bezirganyan/m2-mixer&#41; )
 
+
+The paper is presented at the 2023 IEEE Big-Data Conference. ([slides](https://github.com/bezirganyan/m2-mixer/blob/d793ee7339a971dedd7da8c5aec0479f5965e59d/IEEE%20Big%20Data%202023%20-%20Presentation.pdf))
+
 ## Table Of Contents
 
 * [About the Project](#about-the-project)
@@ -39,7 +42,8 @@
 
 ![M2-Mixer](images/m2mixer.png)
 
-In this paper, we propose M2-Mixer, an MLP9 Mixer based architecture with multi-head loss for multimodal classification. It achieves better performances than other baseline models with the main advantage of conceptual and computational simplicity as it only uses simple operations such as matrix multiplication, data layout change, and scalar non-linearity
+In this paper, we propose M2-Mixer, an MLP-Mixer based architecture with multi-head loss for multimodal classification. It achieves better performances than other baseline models with the main advantage of conceptual and computational simplicity as it only uses simple operations such as matrix multiplication, data layout change, and scalar non-linearity
+
 
 ## Built With
 
