@@ -55,32 +55,48 @@ class AbstractAVMnistMixer(AbstractTrainTestModule, ABC):
 
     def setup_scores(self) -> List[torch.nn.Module]:
         train_scores = dict(acc=Accuracy(task="multiclass", num_classes=10),
-                            f1m=F1Score(task="multiclass", num_classes=10, average='macro'),
-                            prec_m=Precision(task="multiclass", num_classes=10, average='macro'),
-                            rec_m=Recall(task="multiclass", num_classes=10, average='macro'),
-                            f1mi=F1Score(task="multiclass", num_classes=10, average='micro'),
-                            prec_mi=Precision(task="multiclass", num_classes=10, average='micro'),
+                            f1m=F1Score(task="multiclass",
+                                        num_classes=10, average='macro'),
+                            prec_m=Precision(
+                                task="multiclass", num_classes=10, average='macro'),
+                            rec_m=Recall(task="multiclass",
+                                         num_classes=10, average='macro'),
+                            f1mi=F1Score(task="multiclass",
+                                         num_classes=10, average='micro'),
+                            prec_mi=Precision(
+                                task="multiclass", num_classes=10, average='micro'),
                             rec_mi=Recall(task="multiclass", num_classes=10, average='micro'))
         val_scores = dict(acc=Accuracy(task="multiclass", num_classes=10),
-                          f1m=F1Score(task="multiclass", num_classes=10, average='macro'),
-                          prec_m=Precision(task="multiclass", num_classes=10, average='macro'),
-                          rec_m=Recall(task="multiclass", num_classes=10, average='macro'),
-                          f1mi=F1Score(task="multiclass", num_classes=10, average='micro'),
-                          prec_mi=Precision(task="multiclass", num_classes=10, average='micro'),
+                          f1m=F1Score(task="multiclass",
+                                      num_classes=10, average='macro'),
+                          prec_m=Precision(task="multiclass",
+                                           num_classes=10, average='macro'),
+                          rec_m=Recall(task="multiclass",
+                                       num_classes=10, average='macro'),
+                          f1mi=F1Score(task="multiclass",
+                                       num_classes=10, average='micro'),
+                          prec_mi=Precision(
+                              task="multiclass", num_classes=10, average='micro'),
                           rec_mi=Recall(task="multiclass", num_classes=10, average='micro'))
         test_scores = dict(acc=Accuracy(task="multiclass", num_classes=10),
-                           f1m=F1Score(task="multiclass", num_classes=10, average='macro'),
-                           prec_m=Precision(task="multiclass", num_classes=10, average='macro'),
-                           rec_m=Recall(task="multiclass", num_classes=10, average='macro'),
-                           f1mi=F1Score(task="multiclass", num_classes=10, average='micro'),
-                           prec_mi=Precision(task="multiclass", num_classes=10, average='micro'),
+                           f1m=F1Score(task="multiclass",
+                                       num_classes=10, average='macro'),
+                           prec_m=Precision(task="multiclass",
+                                            num_classes=10, average='macro'),
+                           rec_m=Recall(task="multiclass",
+                                        num_classes=10, average='macro'),
+                           f1mi=F1Score(task="multiclass",
+                                        num_classes=10, average='micro'),
+                           prec_mi=Precision(
+                               task="multiclass", num_classes=10, average='micro'),
                            rec_mi=Recall(task="multiclass", num_classes=10, average='micro'))
 
         return [train_scores, val_scores, test_scores]
 
     def configure_optimizers(self):
         optimizer_cfg = self.optimizer_cfg
-        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
+        optimizer = torch.optim.Adam(
+            filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
         scheduler = ReduceLROnPlateau(optimizer, patience=5, verbose=True)
 
         return {
@@ -92,8 +108,10 @@ class AbstractAVMnistMixer(AbstractTrainTestModule, ABC):
 
 class AVMnistImageMixer(AbstractAVMnistMixer):
     def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
-        super(AVMnistImageMixer, self).__init__(model_cfg, optimizer_cfg, **kwargs)
-        self.model = MLPMixer(**model_cfg.modalities.image, dropout=model_cfg.dropout)
+        super(AVMnistImageMixer, self).__init__(
+            model_cfg, optimizer_cfg, **kwargs)
+        self.model = MLPMixer(**model_cfg.modalities.image,
+                              dropout=model_cfg.dropout)
         self.classifier = torch.nn.Linear(model_cfg.modalities.image.hidden_dim,
                                           model_cfg.modalities.classification.num_classes)
 
@@ -107,8 +125,10 @@ class AVMnistImageMixer(AbstractAVMnistMixer):
 
 class AVMnistAudioMixer(AbstractAVMnistMixer):
     def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
-        super(AVMnistAudioMixer, self).__init__(model_cfg, optimizer_cfg, **kwargs)
-        self.model = MLPMixer(**model_cfg.modalities.audio, dropout=model_cfg.dropout)
+        super(AVMnistAudioMixer, self).__init__(
+            model_cfg, optimizer_cfg, **kwargs)
+        self.model = MLPMixer(**model_cfg.modalities.audio,
+                              dropout=model_cfg.dropout)
         self.classifier = torch.nn.Linear(model_cfg.modalities.audio.hidden_dim,
                                           model_cfg.modalities.classification.num_classes)
 
@@ -129,13 +149,18 @@ class AVMnistMixer(AbstractAVMnistMixer):
         audio_config = model_cfg.modalities.audio
         multimodal_config = model_cfg.modalities.multimodal
         dropout = model_cfg.get('dropout', 0.0)
-        self.image_mixer = modules.get_block_by_name(**image_config, dropout=dropout)
-        self.audio_mixer = modules.get_block_by_name(**audio_config, dropout=dropout)
-        self.fusion_function = modules.get_fusion_by_name(**model_cfg.modalities.multimodal)
+        self.image_mixer = modules.get_block_by_name(
+            **image_config, dropout=dropout)
+        self.audio_mixer = modules.get_block_by_name(
+            **audio_config, dropout=dropout)
+        self.fusion_function = modules.get_fusion_by_name(
+            **model_cfg.modalities.multimodal)
         num_patches = self.fusion_function.get_output_shape(self.image_mixer.num_patch, self.audio_mixer.num_patch,
                                                             dim=1)
-        self.fusion_mixer = modules.get_block_by_name(**multimodal_config, num_patches=num_patches, dropout=dropout)
-        self.classifier = modules.get_classifier_by_name(**model_cfg.modalities.classification)
+        self.fusion_mixer = modules.get_block_by_name(
+            **multimodal_config, num_patches=num_patches, dropout=dropout)
+        self.classifier = modules.get_classifier_by_name(
+            **model_cfg.modalities.classification)
 
     def get_logits(self, batch):
         image = batch['image']
@@ -154,8 +179,10 @@ class AVMnistMixer(AbstractAVMnistMixer):
         logits = self.fusion_mixer(fused_moalities)
 
         # logits = logits.reshape(logits.shape[0], -1, logits.shape[-1])
-        audio_logits = audio_logits.reshape(audio_logits.shape[0], -1, audio_logits.shape[-1])
-        image_logits = image_logits.reshape(image_logits.shape[0], -1, image_logits.shape[-1])
+        audio_logits = audio_logits.reshape(
+            audio_logits.shape[0], -1, audio_logits.shape[-1])
+        image_logits = image_logits.reshape(
+            image_logits.shape[0], -1, image_logits.shape[-1])
 
         # get logits for each modality
         logits = self.classifier(logits)
@@ -165,30 +192,38 @@ class AVMnistMixer(AbstractAVMnistMixer):
 
 class AVMnistMixerMultiLoss(AbstractTrainTestModule):
     def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
-        super(AVMnistMixerMultiLoss, self).__init__(optimizer_cfg, log_confusion_matrix=True, **kwargs)
+        super(AVMnistMixerMultiLoss, self).__init__(
+            optimizer_cfg, log_confusion_matrix=True, **kwargs)
         self.modalities_freezed = False
         self.optimizer_cfg = optimizer_cfg
         self.scheduler_patience = optimizer_cfg.pop('scheduler_patience', 5)
         self.checkpoint_path = None
         self.mute = model_cfg.get('mute', None)
-        self.freeze_modalities_on_epoch = model_cfg.get('freeze_modalities_on_epoch', None)
-        self.random_modality_muting_on_freeze = model_cfg.get('random_modality_muting_on_freeze', False)
+        self.freeze_modalities_on_epoch = model_cfg.get(
+            'freeze_modalities_on_epoch', None)
+        self.random_modality_muting_on_freeze = model_cfg.get(
+            'random_modality_muting_on_freeze', False)
         self.muting_probs = model_cfg.get('muting_probs', None)
         image_config = model_cfg.modalities.image
         audio_config = model_cfg.modalities.audio
         multimodal_config = model_cfg.modalities.multimodal
         dropout = model_cfg.get('dropout', 0.0)
-        self.image_mixer = modules.get_block_by_name(**image_config, dropout=dropout)
-        self.audio_mixer = modules.get_block_by_name(**audio_config, dropout=dropout)
-        self.fusion_function = modules.get_fusion_by_name(**model_cfg.modalities.multimodal)
+        self.image_mixer = modules.get_block_by_name(
+            **image_config, dropout=dropout)
+        self.audio_mixer = modules.get_block_by_name(
+            **audio_config, dropout=dropout)
+        self.fusion_function = modules.get_fusion_by_name(
+            **model_cfg.modalities.multimodal)
         num_patches = self.fusion_function.get_output_shape(self.image_mixer.num_patch, self.audio_mixer.num_patch,
                                                             dim=1)
-        self.fusion_mixer = modules.get_block_by_name(**multimodal_config, num_patches=num_patches, dropout=dropout)
+        self.fusion_mixer = modules.get_block_by_name(
+            **multimodal_config, num_patches=num_patches, dropout=dropout)
         self.classifier_image = torch.nn.Linear(model_cfg.modalities.image.hidden_dim,
                                                 model_cfg.modalities.classification.num_classes)
         self.classifier_audio = torch.nn.Linear(model_cfg.modalities.audio.hidden_dim,
                                                 model_cfg.modalities.classification.num_classes)
-        self.classifier_fusion = modules.get_classifier_by_name(**model_cfg.modalities.classification)
+        self.classifier_fusion = modules.get_classifier_by_name(
+            **model_cfg.modalities.classification)
 
         self.image_criterion = CrossEntropyLoss()
         self.audio_criterion = CrossEntropyLoss()
@@ -205,9 +240,12 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
                 self.image_criterion_history = []
                 self.audio_criterion_history = []
                 self.fusion_criterion_history = []
-                self.loss_weights = torch.tensor([1.0 / 3, 1.0 / 3, 1.0 / 3], device=self.device)
-                self.update_loss_weights_per_epoch = model_cfg.get('update_loss_weights_per_epoch', 6)
-                self.softadapt = LossWeightedSoftAdapt(beta=-0.1, accuracy_order=self.update_loss_weights_per_epoch - 1)
+                self.loss_weights = torch.tensor(
+                    [1.0 / 3, 1.0 / 3, 1.0 / 3], device=self.device)
+                self.update_loss_weights_per_epoch = model_cfg.get(
+                    'update_loss_weights_per_epoch', 6)
+                self.softadapt = LossWeightedSoftAdapt(
+                    beta=-0.1, accuracy_order=self.update_loss_weights_per_epoch - 1)
         self.use_gradblend = model_cfg.get('gradblend', False)
         if self.use_gradblend:
             self.gb_update_freq = model_cfg.get('gb_update_freq', 20)
@@ -219,14 +257,17 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
     def on_train_epoch_start(self) -> None:
         if self.use_gradblend and self.current_epoch % self.gb_update_freq == 0:
             encoders = [deepcopy(self.audio_mixer), deepcopy(self.image_mixer)]
-            heads = [deepcopy(self.classifier_audio), deepcopy(self.classifier_image)]
+            heads = [deepcopy(self.classifier_audio),
+                     deepcopy(self.classifier_image)]
             if (self.gb_val_loader is None) or (self.gb_train_loader is None):
                 ds = self.trainer.train_dataloader.dataset.datasets
                 ds_train = Subset(ds, range(int(len(ds) * 0.1), len(ds)))
                 ds_val = Subset(ds, range(int(len(ds) * 0.1)))
                 bs = self.trainer.train_dataloader.loaders.batch_size
-                self.gb_train_loader = DataLoader(ds_train, batch_size=bs, shuffle=True)
-                self.gb_val_loader = DataLoader(ds_val, batch_size=bs, shuffle=True)
+                self.gb_train_loader = DataLoader(
+                    ds_train, batch_size=bs, shuffle=True)
+                self.gb_val_loader = DataLoader(
+                    ds_val, batch_size=bs, shuffle=True)
             self.gradblend = GradBlend(self, encoders, heads, deepcopy(self.fusion_mixer),
                                        deepcopy(self.classifier_fusion),
                                        nn.CrossEntropyLoss, self.gb_train_loader, self.gb_val_loader)
@@ -242,7 +283,7 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
 
         if kwargs.get('mode', None) == 'train':
             if self.freeze_modalities_on_epoch is not None and (self.current_epoch == self.freeze_modalities_on_epoch) \
-                        and not self.modalities_freezed:
+                    and not self.modalities_freezed:
                 self._freeze_modalities()
             if self.random_modality_muting_on_freeze and (self.current_epoch >= self.freeze_modalities_on_epoch):
                 self.mute = np.random.choice(['image', 'audio', 'multimodal'], p=[self.muting_probs['image'],
@@ -264,8 +305,10 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
         logits = self.fusion_mixer(fused_moalities)
 
         # logits = logits.reshape(logits.shape[0], -1, logits.shape[-1])
-        audio_logits = audio_logits.reshape(audio_logits.shape[0], -1, audio_logits.shape[-1])
-        image_logits = image_logits.reshape(image_logits.shape[0], -1, image_logits.shape[-1])
+        audio_logits = audio_logits.reshape(
+            audio_logits.shape[0], -1, audio_logits.shape[-1])
+        image_logits = image_logits.reshape(
+            image_logits.shape[0], -1, image_logits.shape[-1])
 
         # get logits for each modality
         image_logits = self.classifier_image(image_logits.mean(dim=1))
@@ -288,7 +331,8 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
                 0] * loss_audio
         else:
             ow = (1 - self.fusion_loss_weight) / 2
-            loss = (self.fusion_loss_weight * loss_fusion + ow * loss_image + ow * loss_audio) * 3
+            loss = (self.fusion_loss_weight * loss_fusion +
+                    ow * loss_image + ow * loss_audio) * 3
         if self.modalities_freezed and kwargs.get('mode', None) == 'train':
             loss = loss_fusion
 
@@ -323,24 +367,33 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
             param.requires_grad = False
         self.modalities_freezed = True
 
-    def training_epoch_end(self, outputs) -> None:
-        super().training_epoch_end(outputs)
-        wandb.log({'train_loss_image': torch.stack([x['loss_image'] for x in outputs]).mean().item()})
-        wandb.log({'train_loss_audio': torch.stack([x['loss_audio'] for x in outputs]).mean().item()})
-        wandb.log({'train_loss_fusion': torch.stack([x['loss_fusion'] for x in outputs]).mean().item()})
-        self.log('train_loss_fusion', torch.stack([x['loss_fusion'] for x in outputs]).mean().item())
+    def on_train_epoch_end(self, outputs) -> None:
+        super().on_train_epoch_end(outputs)
+        wandb.log({'train_loss_image': torch.stack(
+            [x['loss_image'] for x in outputs]).mean().item()})
+        wandb.log({'train_loss_audio': torch.stack(
+            [x['loss_audio'] for x in outputs]).mean().item()})
+        wandb.log({'train_loss_fusion': torch.stack(
+            [x['loss_fusion'] for x in outputs]).mean().item()})
+        self.log('train_loss_fusion', torch.stack(
+            [x['loss_fusion'] for x in outputs]).mean().item())
 
-    def validation_epoch_end(self, outputs) -> None:
-        super().validation_epoch_end(outputs)
-        val_loss_fusion = torch.stack([x['loss_fusion'] for x in outputs]).mean().item()
+    def on_validation_epoch_end(self, outputs) -> None:
+        super().on_validation_epoch_end(outputs)
+        val_loss_fusion = torch.stack(
+            [x['loss_fusion'] for x in outputs]).mean().item()
         self.log('val_loss_fusion', val_loss_fusion)
         wandb.log({'val_loss_fusion': val_loss_fusion})
         if self.current_epoch >= self.loss_change_epoch:
-            self.fusion_loss_weight = min(1, self.fusion_loss_weight + self.fusion_loss_change)
+            self.fusion_loss_weight = min(
+                1, self.fusion_loss_weight + self.fusion_loss_change)
         if self.use_softadapt:
-            self.image_criterion_history.append(torch.stack([x['loss_image'] for x in outputs]).mean().item())
-            self.audio_criterion_history.append(torch.stack([x['loss_audio'] for x in outputs]).mean().item())
-            self.fusion_criterion_history.append(torch.stack([x['loss_fusion'] for x in outputs]).mean().item())
+            self.image_criterion_history.append(torch.stack(
+                [x['loss_image'] for x in outputs]).mean().item())
+            self.audio_criterion_history.append(torch.stack(
+                [x['loss_audio'] for x in outputs]).mean().item())
+            self.fusion_criterion_history.append(torch.stack(
+                [x['loss_fusion'] for x in outputs]).mean().item())
             wandb.log({'loss_weight_image': self.loss_weights[0].item()})
             wandb.log({'loss_weight_audio': self.loss_weights[1].item()})
             wandb.log({'loss_weight_fusion': self.loss_weights[2].item()})
@@ -352,8 +405,10 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
             if self.current_epoch != 0 and (self.current_epoch % self.update_loss_weights_per_epoch == 0):
                 print('[!] Updating loss weights')
                 self.loss_weights = self.softadapt.get_component_weights(torch.tensor(self.image_criterion_history),
-                                                                         torch.tensor(self.audio_criterion_history),
-                                                                         torch.tensor(self.fusion_criterion_history),
+                                                                         torch.tensor(
+                                                                             self.audio_criterion_history),
+                                                                         torch.tensor(
+                                                                             self.fusion_criterion_history),
                                                                          verbose=True)
                 print(f'[!] loss weights: {self.loss_weights}')
                 self.image_criterion_history = list()
@@ -365,22 +420,28 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
 
     def setup_scores(self) -> List[torch.nn.Module]:
         train_scores = dict(acc=Accuracy(task="multiclass", num_classes=10),
-                            f1m=F1Score(task="multiclass", num_classes=10, average='macro'),
-                            prec_m=Precision(task="multiclass", num_classes=10, average='macro'),
+                            f1m=F1Score(task="multiclass",
+                                        num_classes=10, average='macro'),
+                            prec_m=Precision(
+                                task="multiclass", num_classes=10, average='macro'),
                             rec_m=Recall(task="multiclass", num_classes=10, average='macro'))
         val_scores = dict(acc=Accuracy(task="multiclass", num_classes=10),
-                          f1m=F1Score(task="multiclass", num_classes=10, average='macro'),
-                          prec_m=Precision(task="multiclass", num_classes=10, average='macro'),
+                          f1m=F1Score(task="multiclass",
+                                      num_classes=10, average='macro'),
+                          prec_m=Precision(task="multiclass",
+                                           num_classes=10, average='macro'),
                           rec_m=Recall(task="multiclass", num_classes=10, average='macro'))
         test_scores = dict(acc=Accuracy(task="multiclass", num_classes=10),
-                           f1m=F1Score(task="multiclass", num_classes=10, average='macro'),
-                           prec_m=Precision(task="multiclass", num_classes=10, average='macro'),
+                           f1m=F1Score(task="multiclass",
+                                       num_classes=10, average='macro'),
+                           prec_m=Precision(task="multiclass",
+                                            num_classes=10, average='macro'),
                            rec_m=Recall(task="multiclass", num_classes=10, average='macro'))
 
         return [train_scores, val_scores, test_scores]
 
-    def test_epoch_end(self, outputs, save_preds=False):
-        super().test_epoch_end(outputs, save_preds)
+    def on_test_epoch_end(self, outputs, save_preds=False):
+        super().on_test_epoch_end(outputs, save_preds)
         preds = torch.cat([x['preds'] for x in outputs])
         preds_image = torch.cat([x['preds_image'] for x in outputs])
         preds_audio = torch.cat([x['preds_audio'] for x in outputs])
@@ -406,14 +467,17 @@ class AVMnistMixerMultiLoss(AbstractTrainTestModule):
             strict: bool = True,
             **kwargs: Any,
     ):
-        model = super().load_from_checkpoint(checkpoint_path, map_location, hparams_file, strict, **kwargs)
+        model = super().load_from_checkpoint(checkpoint_path,
+                                             map_location, hparams_file, strict, **kwargs)
         model.checkpoint_path = checkpoint_path
         return model
 
     def configure_optimizers(self):
         optimizer_cfg = self.optimizer_cfg
-        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
-        scheduler = ReduceLROnPlateau(optimizer, patience=self.scheduler_patience, verbose=True)
+        optimizer = torch.optim.Adam(
+            filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
+        scheduler = ReduceLROnPlateau(
+            optimizer, patience=self.scheduler_patience, verbose=True)
 
         return {
             "optimizer": optimizer,
@@ -491,8 +555,10 @@ class AVMnistMixerMultiLossUQ(AVMnistMixerMultiLoss):
         logits = self.fusion_mixer(fused_moalities)
 
         # logits = logits.reshape(logits.shape[0], -1, logits.shape[-1])
-        audio_logits = audio_logits.reshape(audio_logits.shape[0], -1, audio_logits.shape[-1])
-        image_logits = image_logits.reshape(image_logits.shape[0], -1, image_logits.shape[-1])
+        audio_logits = audio_logits.reshape(
+            audio_logits.shape[0], -1, audio_logits.shape[-1])
+        image_logits = image_logits.reshape(
+            image_logits.shape[0], -1, image_logits.shape[-1])
 
         # get logits for each modality
         image_logits = self.classifier_image(image_logits.mean(dim=1))
@@ -500,8 +566,10 @@ class AVMnistMixerMultiLossUQ(AVMnistMixerMultiLoss):
         logits = self.classifier_fusion(logits)
 
         # compute losses
-        loss_image = self.image_criterion(image_logits, labels, self.current_epoch)
-        loss_audio = self.audio_criterion(audio_logits, labels, self.current_epoch)
+        loss_image = self.image_criterion(
+            image_logits, labels, self.current_epoch)
+        loss_audio = self.audio_criterion(
+            audio_logits, labels, self.current_epoch)
         loss_fusion = self.fusion_criterion(logits, labels, self.current_epoch)
 
         if self.use_softadapt:
@@ -526,15 +594,18 @@ class AVMnistMixerMultiLossUQ(AVMnistMixerMultiLoss):
         alpha_image = evidence_image + 1
         alpha_audio = evidence_audio + 1
 
-        uncertainty = self.num_classes / torch.sum(alpha, dim=1, keepdim=True).squeeze(1)
-        uncertainty_image = self.num_classes / torch.sum(alpha_image, dim=1, keepdim=True).squeeze(1)
-        uncertainty_audio = self.num_classes / torch.sum(alpha_audio, dim=1, keepdim=True).squeeze(1)
+        uncertainty = self.num_classes / \
+            torch.sum(alpha, dim=1, keepdim=True).squeeze(1)
+        uncertainty_image = self.num_classes / \
+            torch.sum(alpha_image, dim=1, keepdim=True).squeeze(1)
+        uncertainty_audio = self.num_classes / \
+            torch.sum(alpha_audio, dim=1, keepdim=True).squeeze(1)
 
         pred_combined = preds * (((uncertainty < uncertainty_image) & (uncertainty < uncertainty_audio))).long() \
-                        + preds_image * (
-                            ((uncertainty_image < uncertainty) & (uncertainty_image < uncertainty_audio))).long() \
-                        + preds_audio * (
-                            ((uncertainty_audio < uncertainty) & (uncertainty_audio < uncertainty_image))).long()
+            + preds_image * (
+            ((uncertainty_image < uncertainty) & (uncertainty_image < uncertainty_audio))).long() \
+            + preds_audio * (
+            ((uncertainty_audio < uncertainty) & (uncertainty_audio < uncertainty_image))).long()
 
         return {
             'preds': pred_combined,
@@ -553,23 +624,32 @@ class AVMnistMixerMultiLossUQ(AVMnistMixerMultiLoss):
             'uncertainty_audio': uncertainty_audio.mean(),
         }
 
-    def training_epoch_end(self, outputs) -> None:
-        super().training_epoch_end(outputs)
-        wandb.log({'train_uncertainty': torch.stack([x['uncertainty'] for x in outputs]).mean()})
-        wandb.log({'train_uncertainty_image': torch.stack([x['uncertainty_image'] for x in outputs]).mean()})
-        wandb.log({'train_uncertainty_audio': torch.stack([x['uncertainty_audio'] for x in outputs]).mean()})
+    def on_train_epoch_end(self, outputs) -> None:
+        super().on_train_epoch_end(outputs)
+        wandb.log({'train_uncertainty': torch.stack(
+            [x['uncertainty'] for x in outputs]).mean()})
+        wandb.log({'train_uncertainty_image': torch.stack(
+            [x['uncertainty_image'] for x in outputs]).mean()})
+        wandb.log({'train_uncertainty_audio': torch.stack(
+            [x['uncertainty_audio'] for x in outputs]).mean()})
 
-    def validation_epoch_end(self, outputs) -> None:
-        super().validation_epoch_end(outputs)
-        wandb.log({'val_uncertainty': torch.stack([x['uncertainty'] for x in outputs]).mean()})
-        wandb.log({'val_uncertainty_image': torch.stack([x['uncertainty_image'] for x in outputs]).mean()})
-        wandb.log({'val_uncertainty_audio': torch.stack([x['uncertainty_audio'] for x in outputs]).mean()})
+    def on_validation_epoch_end(self, outputs) -> None:
+        super().on_validation_epoch_end(outputs)
+        wandb.log({'val_uncertainty': torch.stack(
+            [x['uncertainty'] for x in outputs]).mean()})
+        wandb.log({'val_uncertainty_image': torch.stack(
+            [x['uncertainty_image'] for x in outputs]).mean()})
+        wandb.log({'val_uncertainty_audio': torch.stack(
+            [x['uncertainty_audio'] for x in outputs]).mean()})
 
-    def test_epoch_end(self, outputs) -> None:
-        super().test_epoch_end(outputs)
-        wandb.log({'test_uncertainty': torch.stack([x['uncertainty'] for x in outputs]).mean()})
-        wandb.log({'test_uncertainty_image': torch.stack([x['uncertainty_image'] for x in outputs]).mean()})
-        wandb.log({'test_uncertainty_audio': torch.stack([x['uncertainty_audio'] for x in outputs]).mean()})
+    def on_test_epoch_end(self, outputs) -> None:
+        super().on_test_epoch_end(outputs)
+        wandb.log({'test_uncertainty': torch.stack(
+            [x['uncertainty'] for x in outputs]).mean()})
+        wandb.log({'test_uncertainty_image': torch.stack(
+            [x['uncertainty_image'] for x in outputs]).mean()})
+        wandb.log({'test_uncertainty_audio': torch.stack(
+            [x['uncertainty_audio'] for x in outputs]).mean()})
 
     # def configure_optimizers(self):
     #     optimizer_cfg = self.optimizer_cfg

@@ -5,6 +5,7 @@ from typing import Any, Dict
 import torch
 import torch.nn as nn
 
+
 class PnlpMixerSeqCls(nn.Module):
     def __init__(
         self,
@@ -21,6 +22,7 @@ class PnlpMixerSeqCls(nn.Module):
         reprs = self.pnlp_mixer(inputs)
         seq_logits = self.seq_cls(reprs)
         return seq_logits
+
 
 class PnlpMixerTokenCls(nn.Module):
     def __init__(
@@ -39,6 +41,7 @@ class PnlpMixerTokenCls(nn.Module):
         token_logits = self.token_cls(reprs)
         return token_logits
 
+
 class PnlpMixer(nn.Module):
     def __init__(
         self,
@@ -47,7 +50,8 @@ class PnlpMixer(nn.Module):
         **kwargs
     ):
         super(PnlpMixer, self).__init__(**kwargs)
-        self.bottleneck = nn.Linear((2 * bottleneck_cfg.window_size + 1) * bottleneck_cfg.feature_size, bottleneck_cfg.hidden_dim)
+        self.bottleneck = nn.Linear((2 * bottleneck_cfg.window_size + 1)
+                                    * bottleneck_cfg.feature_size, bottleneck_cfg.hidden_dim)
         self.mixer = PNLPMixer(**mixer_cfg)
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:

@@ -23,30 +23,39 @@ except ModuleNotFoundError:
 
 class MimicMixerMultiLoss(AbstractTrainTestModule):
     def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
-        self.num_classes = model_cfg.modalities.classification.get('num_classes', 3)
-        super(MimicMixerMultiLoss, self).__init__(optimizer_cfg, log_confusion_matrix=False, **kwargs)
+        self.num_classes = model_cfg.modalities.classification.get(
+            'num_classes', 3)
+        super(MimicMixerMultiLoss, self).__init__(
+            optimizer_cfg, log_confusion_matrix=False, **kwargs)
         self.modalities_freezed = False
         self.optimizer_cfg = optimizer_cfg
         self.checkpoint_path = None
         self.mute = model_cfg.get('mute', None)
-        self.freeze_modalities_on_epoch = model_cfg.get('freeze_modalities_on_epoch', None)
-        self.random_modality_muting_on_freeze = model_cfg.get('random_modality_muting_on_freeze', False)
+        self.freeze_modalities_on_epoch = model_cfg.get(
+            'freeze_modalities_on_epoch', None)
+        self.random_modality_muting_on_freeze = model_cfg.get(
+            'random_modality_muting_on_freeze', False)
         self.muting_probs = model_cfg.get('muting_probs', None)
         static_config = model_cfg.modalities.static
         time_config = model_cfg.modalities.time
         multimodal_config = model_cfg.modalities.multimodal
         dropout = model_cfg.get('dropout', 0.0)
-        self.time_mixer = modules.get_block_by_name(**time_config, dropout=dropout)
-        self.static_extractor = modules.get_block_by_name(**static_config, dropout=dropout)
-        self.fusion_function = modules.get_fusion_by_name(**model_cfg.modalities.multimodal)
+        self.time_mixer = modules.get_block_by_name(
+            **time_config, dropout=dropout)
+        self.static_extractor = modules.get_block_by_name(
+            **static_config, dropout=dropout)
+        self.fusion_function = modules.get_fusion_by_name(
+            **model_cfg.modalities.multimodal)
         num_patches = self.fusion_function.get_output_shape(1, self.time_mixer.num_patch,
                                                             dim=1)
-        self.fusion_mixer = modules.get_block_by_name(**multimodal_config, num_patches=num_patches, dropout=dropout)
+        self.fusion_mixer = modules.get_block_by_name(
+            **multimodal_config, num_patches=num_patches, dropout=dropout)
         self.classifier_static = torch.nn.Linear(model_cfg.modalities.static.output_dim,
                                                  model_cfg.modalities.classification.num_classes)
         self.classifier_time = torch.nn.Linear(model_cfg.modalities.time.hidden_dim,
                                                model_cfg.modalities.classification.num_classes)
-        self.classifier_fusion = modules.get_classifier_by_name(**model_cfg.modalities.classification)
+        self.classifier_fusion = modules.get_classifier_by_name(
+            **model_cfg.modalities.classification)
         self.static_criterion = CrossEntropyLoss()
         self.time_criterion = CrossEntropyLoss()
         self.fusion_criterion = CrossEntropyLoss()
@@ -62,8 +71,10 @@ class MimicMixerMultiLoss(AbstractTrainTestModule):
                 self.static_criterion_history = []
                 self.time_criterion_history = []
                 self.fusion_criterion_history = []
-                self.update_loss_weights_per_epoch = model_cfg.get('update_loss_weights_per_epoch', 6)
-                self.softadapt = LossWeightedSoftAdapt(beta=-0.1, accuracy_order=self.update_loss_weights_per_epoch - 1)
+                self.update_loss_weights_per_epoch = model_cfg.get(
+                    'update_loss_weights_per_epoch', 6)
+                self.softadapt = LossWeightedSoftAdapt(
+                    beta=-0.1, accuracy_order=self.update_loss_weights_per_epoch - 1)
         # self.init_weights()
         self.use_gradblend = model_cfg.get('gradblend', False)
         if self.use_gradblend:
@@ -75,15 +86,19 @@ class MimicMixerMultiLoss(AbstractTrainTestModule):
 
     def on_train_epoch_start(self) -> None:
         if self.use_gradblend and self.current_epoch % self.gb_update_freq == 0:
-            encoders = [deepcopy(self.static_extractor), deepcopy(self.time_mixer)]
-            heads = [deepcopy(self.classifier_static), deepcopy(self.classifier_time)]
+            encoders = [deepcopy(self.static_extractor),
+                        deepcopy(self.time_mixer)]
+            heads = [deepcopy(self.classifier_static),
+                     deepcopy(self.classifier_time)]
             if (self.gb_val_loader is None) or (self.gb_train_loader is None):
                 ds = self.trainer.train_dataloader.dataset.datasets
                 ds_train = Subset(ds, range(int(len(ds) * 0.1), len(ds)))
                 ds_val = Subset(ds, range(int(len(ds) * 0.1)))
                 bs = self.trainer.train_dataloader.loaders.batch_size
-                self.gb_train_loader = DataLoader(ds_train, batch_size=bs, shuffle=True)
-                self.gb_val_loader = DataLoader(ds_val, batch_size=bs, shuffle=True)
+                self.gb_train_loader = DataLoader(
+                    ds_train, batch_size=bs, shuffle=True)
+                self.gb_val_loader = DataLoader(
+                    ds_val, batch_size=bs, shuffle=True)
             self.gradblend = GradBlend(self, encoders, heads, deepcopy(self.fusion_mixer),
                                        deepcopy(self.classifier_fusion),
                                        nn.CrossEntropyLoss, self.gb_train_loader, self.gb_val_loader)
@@ -99,7 +114,8 @@ class MimicMixerMultiLoss(AbstractTrainTestModule):
         time = self.time_mixer(time)
 
         # fuse modalities
-        fused_moalities = self.fusion_function(static_logits.unsqueeze(1), time)
+        fused_moalities = self.fusion_function(
+            static_logits.unsqueeze(1), time)
         logits = self.fusion_mixer(fused_moalities)
 
         # get classification logits
@@ -141,41 +157,56 @@ class MimicMixerMultiLoss(AbstractTrainTestModule):
             'logits_time': time_logits,
         }
 
-    def validation_epoch_end(self, outputs):
-        super().validation_epoch_end(outputs)
-        val_loss_fusion = torch.stack([x['loss_fusion'] for x in outputs]).mean().item()
+    def on_validation_epoch_end(self, outputs):
+        super().on_validation_epoch_end(outputs)
+        val_loss_fusion = torch.stack(
+            [x['loss_fusion'] for x in outputs]).mean().item()
         self.log('val_loss_fusion', val_loss_fusion)
         wandb.log({'val_loss_fusion': val_loss_fusion})
         if self.current_epoch >= self.loss_change_epoch:
-            self.fusion_loss_weight = min(1, self.fusion_loss_weight + self.fusion_loss_change)
+            self.fusion_loss_weight = min(
+                1, self.fusion_loss_weight + self.fusion_loss_change)
 
-    def training_epoch_end(self, outputs) -> None:
-        super().training_epoch_end(outputs)
-        wandb.log({'train_loss_static': torch.stack([x['loss_static'] for x in outputs]).mean().item()})
-        wandb.log({'train_loss_time': torch.stack([x['loss_time'] for x in outputs]).mean().item()})
-        wandb.log({'train_loss_fusion': torch.stack([x['loss_fusion'] for x in outputs]).mean().item()})
-        self.log('train_loss_fusion', torch.stack([x['loss_fusion'] for x in outputs]).mean().item())
+    def on_train_epoch_end(self, outputs) -> None:
+        super().on_train_epoch_end(outputs)
+        wandb.log({'train_loss_static': torch.stack(
+            [x['loss_static'] for x in outputs]).mean().item()})
+        wandb.log({'train_loss_time': torch.stack(
+            [x['loss_time'] for x in outputs]).mean().item()})
+        wandb.log({'train_loss_fusion': torch.stack(
+            [x['loss_fusion'] for x in outputs]).mean().item()})
+        self.log('train_loss_fusion', torch.stack(
+            [x['loss_fusion'] for x in outputs]).mean().item())
 
     def setup_criterion(self) -> torch.nn.Module:
         return None
 
     def setup_scores(self) -> List[torch.nn.Module]:
         train_scores = dict(f1_micro=F1Score(task="multiclass", num_classes=self.num_classes, average="micro"),
-                            acc=Accuracy(task="multiclass", num_classes=self.num_classes, average="micro"),
-                            precision_micro=Precision(task="multiclass", num_classes=self.num_classes, average="micro"),
-                            recall_micro=Recall(task="multiclass", num_classes=self.num_classes, average="micro"),
+                            acc=Accuracy(
+                                task="multiclass", num_classes=self.num_classes, average="micro"),
+                            precision_micro=Precision(
+                                task="multiclass", num_classes=self.num_classes, average="micro"),
+                            recall_micro=Recall(
+                                task="multiclass", num_classes=self.num_classes, average="micro"),
                             auroc=AveragePrecision(task="multiclass", num_classes=self.num_classes, average="macro"))
 
         val_scores = dict(f1_micro=F1Score(task="multiclass", num_classes=self.num_classes, average="micro"),
-                          acc=Accuracy(task="multiclass", num_classes=self.num_classes, average="micro"),
-                          precision_micro=Precision(task="multiclass", num_classes=self.num_classes, average="micro"),
-                          recall_micro=Recall(task="multiclass", num_classes=self.num_classes, average="micro"),
+                          acc=Accuracy(
+                              task="multiclass", num_classes=self.num_classes, average="micro"),
+                          precision_micro=Precision(
+                              task="multiclass", num_classes=self.num_classes, average="micro"),
+                          recall_micro=Recall(
+                              task="multiclass", num_classes=self.num_classes, average="micro"),
                           auroc=AveragePrecision(task="multiclass", num_classes=self.num_classes, average="macro"))
 
         test_scores = dict(f1_micro=F1Score(task="multiclass", num_classes=self.num_classes, average="micro"),
-                           acc=Accuracy(task="multiclass", num_classes=self.num_classes, average="micro"),
-                           precision_micro=Precision(task="multiclass", num_classes=self.num_classes, average="micro"),
-                           recall_micro=Recall(task="multiclass", num_classes=self.num_classes, average="micro"),
+                           acc=Accuracy(
+                               task="multiclass", num_classes=self.num_classes, average="micro"),
+                           precision_micro=Precision(
+                               task="multiclass", num_classes=self.num_classes, average="micro"),
+                           recall_micro=Recall(
+                               task="multiclass", num_classes=self.num_classes, average="micro"),
                            auroc=AveragePrecision(task="multiclass", num_classes=self.num_classes, average="macro"))
 
         return [train_scores, val_scores, test_scores]
@@ -189,14 +220,16 @@ class MimicMixerMultiLoss(AbstractTrainTestModule):
             strict: bool = True,
             **kwargs: Any,
     ):
-        model = super().load_from_checkpoint(checkpoint_path, map_location, hparams_file, strict, **kwargs)
+        model = super().load_from_checkpoint(checkpoint_path,
+                                             map_location, hparams_file, strict, **kwargs)
         model.checkpoint_path = checkpoint_path
         return model
 
     def init_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                nn.init.kaiming_normal_(
+                    m.weight, mode='fan_out', nonlinearity='relu')
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.BatchNorm1d):
@@ -209,24 +242,32 @@ class MimicMixerMultiLoss(AbstractTrainTestModule):
 
 class MimicRecurrent(MimicMixerMultiLoss):
     def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
-        self.num_classes = model_cfg.modalities.classification.get('num_classes', 6)
-        super(MimicMixerMultiLoss, self).__init__(optimizer_cfg, log_confusion_matrix=True, **kwargs)
+        self.num_classes = model_cfg.modalities.classification.get(
+            'num_classes', 6)
+        super(MimicMixerMultiLoss, self).__init__(
+            optimizer_cfg, log_confusion_matrix=True, **kwargs)
         self.optimizer_cfg = optimizer_cfg
         self.checkpoint_path = None
         static_config = model_cfg.modalities.static
         time_config = model_cfg.modalities.time
         multimodal_config = model_cfg.modalities.multimodal
         dropout = model_cfg.get('dropout', 0.0)
-        self.time_encoder = modules.get_block_by_name(**time_config, dropout=dropout)
-        self.static_extractor = modules.get_block_by_name(**static_config, dropout=dropout)
-        self.fusion_function = modules.get_fusion_by_name(**model_cfg.modalities.multimodal)
-        self.fusion_encoder = modules.get_block_by_name(**multimodal_config, dropout=dropout)
+        self.time_encoder = modules.get_block_by_name(
+            **time_config, dropout=dropout)
+        self.static_extractor = modules.get_block_by_name(
+            **static_config, dropout=dropout)
+        self.fusion_function = modules.get_fusion_by_name(
+            **model_cfg.modalities.multimodal)
+        self.fusion_encoder = modules.get_block_by_name(
+            **multimodal_config, dropout=dropout)
         self.classifier_static = torch.nn.Linear(model_cfg.modalities.static.output_dim,
                                                  model_cfg.modalities.classification.num_classes)
-        time_out = model_cfg.modalities.time.input_dim * model_cfg.modalities.time.hidden_dim * 2
+        time_out = model_cfg.modalities.time.input_dim * \
+            model_cfg.modalities.time.hidden_dim * 2
         self.classifier_time = torch.nn.Linear(time_out,
                                                model_cfg.modalities.classification.num_classes)
-        self.classifier_fusion = modules.get_classifier_by_name(**model_cfg.modalities.classification)
+        self.classifier_fusion = modules.get_classifier_by_name(
+            **model_cfg.modalities.classification)
         self.static_criterion = CrossEntropyLoss()
         self.time_criterion = CrossEntropyLoss()
         self.fusion_criterion = CrossEntropyLoss()
@@ -238,8 +279,10 @@ class MimicRecurrent(MimicMixerMultiLoss):
             self.static_criterion_history = []
             self.time_criterion_history = []
             self.fusion_criterion_history = []
-            self.update_loss_weights_per_epoch = model_cfg.get('update_loss_weights_per_epoch', 6)
-            self.softadapt = LossWeightedSoftAdapt(beta=-0.1, accuracy_order=self.update_loss_weights_per_epoch - 1)
+            self.update_loss_weights_per_epoch = model_cfg.get(
+                'update_loss_weights_per_epoch', 6)
+            self.softadapt = LossWeightedSoftAdapt(
+                beta=-0.1, accuracy_order=self.update_loss_weights_per_epoch - 1)
         # self.init_weights()
         self.use_gradblend = model_cfg.get('gradblend', False)
         if self.use_gradblend:
@@ -302,15 +345,19 @@ class MimicRecurrent(MimicMixerMultiLoss):
 
     def on_train_epoch_start(self) -> None:
         if self.use_gradblend and self.current_epoch % self.gb_update_freq == 0:
-            encoders = [deepcopy(self.static_extractor), deepcopy(self.time_encoder)]
-            heads = [deepcopy(self.classifier_static), deepcopy(self.classifier_time)]
+            encoders = [deepcopy(self.static_extractor),
+                        deepcopy(self.time_encoder)]
+            heads = [deepcopy(self.classifier_static),
+                     deepcopy(self.classifier_time)]
             if (self.gb_val_loader is None) or (self.gb_train_loader is None):
                 ds = self.trainer.train_dataloader.dataset.datasets
                 ds_train = Subset(ds, range(int(len(ds) * 0.1), len(ds)))
                 ds_val = Subset(ds, range(int(len(ds) * 0.1)))
                 bs = self.trainer.train_dataloader.loaders.batch_size
-                self.gb_train_loader = DataLoader(ds_train, batch_size=bs, shuffle=True)
-                self.gb_val_loader = DataLoader(ds_val, batch_size=bs, shuffle=True)
+                self.gb_train_loader = DataLoader(
+                    ds_train, batch_size=bs, shuffle=True)
+                self.gb_val_loader = DataLoader(
+                    ds_val, batch_size=bs, shuffle=True)
             self.gradblend = GradBlend(self, encoders, heads, deepcopy(self.fusion_encoder),
                                        deepcopy(self.classifier_fusion),
                                        nn.CrossEntropyLoss, self.gb_train_loader, self.gb_val_loader)
@@ -319,8 +366,10 @@ class MimicRecurrent(MimicMixerMultiLoss):
 
     def configure_optimizers(self):
         optimizer_cfg = self.optimizer_cfg
-        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
-        scheduler = ReduceLROnPlateau(optimizer, patience=5, verbose=True, mode='min')
+        optimizer = torch.optim.Adam(
+            filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
+        scheduler = ReduceLROnPlateau(
+            optimizer, patience=5, verbose=True, mode='min')
 
         return {
             "optimizer": optimizer,
@@ -328,8 +377,9 @@ class MimicRecurrent(MimicMixerMultiLoss):
             "monitor": "val_loss",
         }
 
-    def validation_epoch_end(self, outputs):
-        super().validation_epoch_end(outputs)
-        val_loss_fusion = torch.stack([x['loss_fusion'] for x in outputs]).mean().item()
+    def on_validation_epoch_end(self, outputs):
+        super().on_validation_epoch_end(outputs)
+        val_loss_fusion = torch.stack(
+            [x['loss_fusion'] for x in outputs]).mean().item()
         self.log('val_loss_fusion', val_loss_fusion)
         wandb.log({'val_loss_fusion': val_loss_fusion})

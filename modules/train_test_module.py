@@ -62,7 +62,8 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
 
     def log_n_parameters(self):
         if not self.logged_n_parameters:
-            trainable_parameters = sum(p.numel() for p in self.parameters() if p.requires_grad)
+            trainable_parameters = sum(p.numel()
+                                       for p in self.parameters() if p.requires_grad)
             total_parameters = sum(p.numel() for p in self.parameters())
 
             wandb.run.summary['trainable_parameters'] = trainable_parameters
@@ -75,39 +76,47 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
             for metric in self.train_scores:
                 self.train_scores[metric].to(self.device)
         results = self.shared_step(batch, mode='train')
-        self.log('', results['loss'], on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        self.log('', results['loss'], on_step=True,
+                 on_epoch=True, prog_bar=True, logger=True)
         if self.train_scores is not None:
             for metric in self.train_scores:
-                score = self.train_scores[metric](results['preds'].to(self.device), results['labels'].to(self.device))
-                self.log(f'train_{metric}_step', score, on_step=True, on_epoch=False, prog_bar=True, logger=True)
+                score = self.train_scores[metric](results['preds'].to(
+                    self.device), results['labels'].to(self.device))
+                self.log(f'train_{metric}_step', score, on_step=True,
+                         on_epoch=False, prog_bar=True, logger=True)
         wandb.log({'train_loss_step': results['loss'].cpu().item()})
         return results
 
-    def training_epoch_end(self, outputs):
+    def on_train_epoch_end(self, outputs):
         if self.train_scores is not None:
             for metric in self.train_scores:
                 train_score = self.train_scores[metric].compute()
                 wandb.log({f'train_{metric}': train_score})
-                self.log(f'train_{metric}', train_score, prog_bar=True, logger=True)
-        wandb.log({'train_loss': np.mean([output['loss'].cpu().item() for output in outputs])})
+                self.log(f'train_{metric}', train_score,
+                         prog_bar=True, logger=True)
+        wandb.log({'train_loss': np.mean(
+            [output['loss'].cpu().item() for output in outputs])})
 
     def validation_step(self, batch, batch_idx):
         if self.val_scores is not None:
             for metric in self.val_scores:
                 self.val_scores[metric].to(self.device)
         results = self.shared_step(batch, mode='val')
-        self.log('val_loss', results['loss'], on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        self.log('val_loss', results['loss'], on_step=False,
+                 on_epoch=True, prog_bar=True, logger=True)
         if self.val_scores is not None:
             for metric in self.val_scores:
-                self.val_scores[metric](results['preds'].to(self.device), results['labels'].to(self.device))
+                self.val_scores[metric](results['preds'].to(
+                    self.device), results['labels'].to(self.device))
         return results
 
-    def validation_epoch_end(self, outputs):
+    def on_on_validation_epoch_end(self, outputs):
         if self.val_scores is not None:
             for metric in self.val_scores:
                 val_score = self.val_scores[metric].compute()
                 wandb.log({f'val_{metric}': val_score})
-                self.log(f'val_{metric}', val_score, prog_bar=True, logger=True)
+                self.log(f'val_{metric}', val_score,
+                         prog_bar=True, logger=True)
         val_loss = np.mean([output['loss'].cpu().item() for output in outputs])
         wandb.log({'val_loss': val_loss})
         if self.best_epochs['val_loss'] is None or (val_loss <= self.best_epochs['val_loss'][1]):
@@ -128,7 +137,8 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
                 probs=None,
                 y_true=labs.long().cpu().numpy(),
                 preds=preds.long().cpu().numpy(),
-                class_names=range(max(preds.long().max().item(), labs.max().item()) + 1),
+                class_names=range(
+                    max(preds.long().max().item(), labs.max().item()) + 1),
             )})
 
     def test_step(self, batch, batch_idx):
@@ -137,18 +147,21 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
             for metric in self.test_scores:
                 self.test_scores[metric].to(self.device)
         results = self.shared_step(batch, mode='test')
-        self.log('test_loss', results['loss'], on_step=False, on_epoch=True, prog_bar=True, logger=True)
+        self.log('test_loss', results['loss'], on_step=False,
+                 on_epoch=True, prog_bar=True, logger=True)
         if self.test_scores is not None:
             for metric in self.test_scores:
-                self.test_scores[metric](results['preds'].to(self.device), results['labels'].to(self.device))
+                self.test_scores[metric](results['preds'].to(
+                    self.device), results['labels'].to(self.device))
         return results
 
-    def test_epoch_end(self, outputs, save_preds=False):
+    def on_on_test_epoch_end(self, outputs, save_preds=False):
         if self.test_scores is not None:
             for metric in self.test_scores:
                 test_score = self.test_scores[metric].compute()
                 wandb.log({f'test_{metric}': test_score})
-                self.log(f'test_{metric}', test_score, prog_bar=True, logger=True)
+                self.log(f'test_{metric}', test_score,
+                         prog_bar=True, logger=True)
         if self.log_confusion_matrix:
             preds = torch.cat([output['preds'].cpu() for output in outputs])
             labs = torch.cat([output['labels'].cpu() for output in outputs])
@@ -156,7 +169,8 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
                 probs=None,
                 y_true=labs.long().cpu().numpy(),
                 preds=preds.long().cpu().numpy(),
-                class_names=range(max(preds.max().item(), labs.max().item()) + 1),
+                class_names=range(
+                    max(preds.max().item(), labs.max().item()) + 1),
             )})
 
     def predict_step(self, batch: Any, batch_idx: int, dataloader_idx: int = 0) -> Any:
@@ -165,7 +179,8 @@ class AbstractTrainTestModule(pl.LightningModule, abc.ABC):
 
     def configure_optimizers(self):
         optimizer_cfg = self.optimizer_cfg
-        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
+        optimizer = torch.optim.Adam(
+            filter(lambda p: p.requires_grad, self.parameters()), **optimizer_cfg)
         scheduler = ReduceLROnPlateau(optimizer, patience=5, verbose=True)
 
         return {

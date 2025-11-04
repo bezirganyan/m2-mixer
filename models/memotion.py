@@ -18,32 +18,42 @@ except ModuleNotFoundError:
     print('Warning: Could not import softadapt. LossWeightedSoftAdapt will not be available.')
     LossWeightedSoftAdapt = None
 
+
 class MemotionMixerMultiLoss(AbstractTrainTestModule):
     def __init__(self, model_cfg: DictConfig, optimizer_cfg: DictConfig, **kwargs):
-        self.num_classes = model_cfg.modalities.classification.get('num_classes', 3)
-        super(MemotionMixerMultiLoss, self).__init__(optimizer_cfg, log_confusion_matrix=False, **kwargs)
+        self.num_classes = model_cfg.modalities.classification.get(
+            'num_classes', 3)
+        super(MemotionMixerMultiLoss, self).__init__(
+            optimizer_cfg, log_confusion_matrix=False, **kwargs)
         self.modalities_freezed = False
         self.optimizer_cfg = optimizer_cfg
         self.checkpoint_path = None
         self.mute = model_cfg.get('mute', None)
-        self.freeze_modalities_on_epoch = model_cfg.get('freeze_modalities_on_epoch', None)
-        self.random_modality_muting_on_freeze = model_cfg.get('random_modality_muting_on_freeze', False)
+        self.freeze_modalities_on_epoch = model_cfg.get(
+            'freeze_modalities_on_epoch', None)
+        self.random_modality_muting_on_freeze = model_cfg.get(
+            'random_modality_muting_on_freeze', False)
         self.muting_probs = model_cfg.get('muting_probs', None)
         image_config = model_cfg.modalities.image
         text_config = model_cfg.modalities.text
         multimodal_config = model_cfg.modalities.multimodal
         dropout = model_cfg.get('dropout', 0.0)
-        self.image_mixer = modules.get_block_by_name(**image_config, dropout=dropout)
-        self.text_mixer = modules.get_block_by_name(**text_config, dropout=dropout)
-        self.fusion_function = modules.get_fusion_by_name(**model_cfg.modalities.multimodal)
+        self.image_mixer = modules.get_block_by_name(
+            **image_config, dropout=dropout)
+        self.text_mixer = modules.get_block_by_name(
+            **text_config, dropout=dropout)
+        self.fusion_function = modules.get_fusion_by_name(
+            **model_cfg.modalities.multimodal)
         num_patches = self.fusion_function.get_output_shape(self.image_mixer.num_patch, self.text_mixer.num_patch,
                                                             dim=1)
-        self.fusion_mixer = modules.get_block_by_name(**multimodal_config, num_patches=num_patches, dropout=dropout)
+        self.fusion_mixer = modules.get_block_by_name(
+            **multimodal_config, num_patches=num_patches, dropout=dropout)
         self.classifier_image = torch.nn.Linear(model_cfg.modalities.image.hidden_dim,
                                                 model_cfg.modalities.classification.num_classes)
         self.classifier_text = torch.nn.Linear(model_cfg.modalities.text.hidden_dim,
-                                                model_cfg.modalities.classification.num_classes)
-        self.classifier_fusion = modules.get_classifier_by_name(**model_cfg.modalities.classification)
+                                               model_cfg.modalities.classification.num_classes)
+        self.classifier_fusion = modules.get_classifier_by_name(
+            **model_cfg.modalities.classification)
 
         self.image_criterion = CrossEntropyLoss()
         self.text_criterion = CrossEntropyLoss()
@@ -58,9 +68,12 @@ class MemotionMixerMultiLoss(AbstractTrainTestModule):
                 self.image_criterion_history = []
                 self.text_criterion_history = []
                 self.fusion_criterion_history = []
-                self.loss_weights = torch.tensor([1.0 / 3, 1.0 / 3, 1.0 / 3], device=self.device)
-                self.update_loss_weights_per_epoch = model_cfg.get('update_loss_weights_per_epoch', 6)
-                self.softadapt = LossWeightedSoftAdapt(beta=-0.1, accuracy_order=self.update_loss_weights_per_epoch - 1)
+                self.loss_weights = torch.tensor(
+                    [1.0 / 3, 1.0 / 3, 1.0 / 3], device=self.device)
+                self.update_loss_weights_per_epoch = model_cfg.get(
+                    'update_loss_weights_per_epoch', 6)
+                self.softadapt = LossWeightedSoftAdapt(
+                    beta=-0.1, accuracy_order=self.update_loss_weights_per_epoch - 1)
 
     def shared_step(self, batch, **kwargs):
         # Load data
@@ -71,12 +84,12 @@ class MemotionMixerMultiLoss(AbstractTrainTestModule):
 
         if kwargs.get('mode', None) == 'train':
             if self.freeze_modalities_on_epoch is not None and (self.current_epoch == self.freeze_modalities_on_epoch) \
-                        and not self.modalities_freezed:
+                    and not self.modalities_freezed:
                 self._freeze_modalities()
             if self.random_modality_muting_on_freeze and (self.current_epoch >= self.freeze_modalities_on_epoch):
                 self.mute = np.random.choice(['image', 'text', 'multimodal'], p=[self.muting_probs['image'],
-                                                                                  self.muting_probs['text'],
-                                                                                  self.muting_probs['multimodal']])
+                                                                                 self.muting_probs['text'],
+                                                                                 self.muting_probs['multimodal']])
 
             if self.mute != 'multimodal':
                 if self.mute == 'image':
@@ -93,8 +106,10 @@ class MemotionMixerMultiLoss(AbstractTrainTestModule):
         logits = self.fusion_mixer(fused_moalities)
 
         # logits = logits.reshape(logits.shape[0], -1, logits.shape[-1])
-        text_logits = text_logits.reshape(text_logits.shape[0], -1, text_logits.shape[-1])
-        image_logits = image_logits.reshape(image_logits.shape[0], -1, image_logits.shape[-1])
+        text_logits = text_logits.reshape(
+            text_logits.shape[0], -1, text_logits.shape[-1])
+        image_logits = image_logits.reshape(
+            image_logits.shape[0], -1, image_logits.shape[-1])
 
         # get logits for each modality
         image_logits = self.classifier_image(image_logits.mean(dim=1))
@@ -145,19 +160,26 @@ class MemotionMixerMultiLoss(AbstractTrainTestModule):
             param.requires_grad = False
         self.modalities_freezed = True
 
-    def training_epoch_end(self, outputs) -> None:
-        super().training_epoch_end(outputs)
-        wandb.log({'train_loss_image': torch.stack([x['loss_image'] for x in outputs]).mean().item()})
-        wandb.log({'train_loss_text': torch.stack([x['loss_text'] for x in outputs]).mean().item()})
-        wandb.log({'train_loss_fusion': torch.stack([x['loss_fusion'] for x in outputs]).mean().item()})
-        self.log('train_loss_fusion', torch.stack([x['loss_fusion'] for x in outputs]).mean().item())
+    def on_train_epoch_end(self, outputs) -> None:
+        super().on_train_epoch_end(outputs)
+        wandb.log({'train_loss_image': torch.stack(
+            [x['loss_image'] for x in outputs]).mean().item()})
+        wandb.log({'train_loss_text': torch.stack(
+            [x['loss_text'] for x in outputs]).mean().item()})
+        wandb.log({'train_loss_fusion': torch.stack(
+            [x['loss_fusion'] for x in outputs]).mean().item()})
+        self.log('train_loss_fusion', torch.stack(
+            [x['loss_fusion'] for x in outputs]).mean().item())
 
-    def validation_epoch_end(self, outputs) -> None:
-        super().validation_epoch_end(outputs)
+    def on_validation_epoch_end(self, outputs) -> None:
+        super().on_validation_epoch_end(outputs)
         if self.use_softadapt:
-            self.image_criterion_history.append(torch.stack([x['loss_image'] for x in outputs]).mean().item())
-            self.text_criterion_history.append(torch.stack([x['loss_text'] for x in outputs]).mean().item())
-            self.fusion_criterion_history.append(torch.stack([x['loss_fusion'] for x in outputs]).mean().item())
+            self.image_criterion_history.append(torch.stack(
+                [x['loss_image'] for x in outputs]).mean().item())
+            self.text_criterion_history.append(torch.stack(
+                [x['loss_text'] for x in outputs]).mean().item())
+            self.fusion_criterion_history.append(torch.stack(
+                [x['loss_fusion'] for x in outputs]).mean().item())
             wandb.log({'loss_weight_image': self.loss_weights[0].item()})
             wandb.log({'loss_weight_text': self.loss_weights[1].item()})
             wandb.log({'loss_weight_fusion': self.loss_weights[2].item()})
@@ -169,12 +191,14 @@ class MemotionMixerMultiLoss(AbstractTrainTestModule):
             if self.current_epoch != 0 and (self.current_epoch % self.update_loss_weights_per_epoch == 0):
                 self._update_softadapt_weights()
 
-    # TODO Rename this here and in `validation_epoch_end`
+    # TODO Rename this here and in `on_validation_epoch_end`
     def _update_softadapt_weights(self):
         print('[!] Updating loss weights')
         self.loss_weights = self.softadapt.get_component_weights(torch.tensor(self.image_criterion_history),
-                                                                 torch.tensor(self.text_criterion_history),
-                                                                 torch.tensor(self.fusion_criterion_history),
+                                                                 torch.tensor(
+                                                                     self.text_criterion_history),
+                                                                 torch.tensor(
+                                                                     self.fusion_criterion_history),
                                                                  verbose=True)
         print(f'[!] loss weights: {self.loss_weights}')
         self.image_criterion_history = []
@@ -185,14 +209,17 @@ class MemotionMixerMultiLoss(AbstractTrainTestModule):
         return None
 
     def setup_scores(self) -> List[torch.nn.Module]:
-        train_scores = dict(f1m=F1Score(task="multiclass", num_classes=self.num_classes, average='macro'))
-        val_scores = dict(f1m=F1Score(task="multiclass", num_classes=self.num_classes, average='macro'))
-        test_scores = dict(f1m=F1Score(task="multiclass", num_classes=self.num_classes, average='macro'))
+        train_scores = dict(f1m=F1Score(task="multiclass",
+                            num_classes=self.num_classes, average='macro'))
+        val_scores = dict(f1m=F1Score(task="multiclass",
+                          num_classes=self.num_classes, average='macro'))
+        test_scores = dict(f1m=F1Score(task="multiclass",
+                           num_classes=self.num_classes, average='macro'))
 
         return [train_scores, val_scores, test_scores]
 
-    def test_epoch_end(self, outputs, save_preds=False):
-        super().test_epoch_end(outputs, save_preds)
+    def on_test_epoch_end(self, outputs, save_preds=False):
+        super().on_test_epoch_end(outputs, save_preds)
         preds = torch.cat([x['preds'] for x in outputs])
         preds_image = torch.cat([x['preds_image'] for x in outputs])
         preds_text = torch.cat([x['preds_text'] for x in outputs])
@@ -227,7 +254,8 @@ class MemotionMixerMultiLoss(AbstractTrainTestModule):
             strict: bool = True,
             **kwargs: Any,
     ):
-        model = super().load_from_checkpoint(checkpoint_path, map_location, hparams_file, strict, **kwargs)
+        model = super().load_from_checkpoint(checkpoint_path,
+                                             map_location, hparams_file, strict, **kwargs)
         model.checkpoint_path = checkpoint_path
         return model
 
